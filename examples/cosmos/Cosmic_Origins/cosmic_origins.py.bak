@@ -1,0 +1,969 @@
+#!/usr/bin/env python3
+"""
+Cosmic Origins - Territorial Conquest Edition
+==============================================
+A .geo-Powered Space Conquest Game
+
+Command your faction, conquer star systems, and dominate the galaxy!
+All territory mechanics are driven by .geo scripts.
+
+Controls:
+  - Arrow Keys / WASD: Move ship
+  - Space: Attack territory / Capture
+  - E: Interact with territory
+  - Tab: Toggle territory overlay
+  - 1-3: Select fleet type
+  - P: Pause
+  - Esc: Quit
+
+Run: python cosmic_origins.py
+"""
+
+import sys
+import os
+import math
+import random
+import json
+from pathlib import Path
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional, Tuple
+from enum import Enum
+
+# Add parent directory for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    import pygame
+    HAS_PYGAME = True
+except ImportError:
+    HAS_PYGAME = False
+    print("Error: pygame required. Install with: pip install pygame")
+    sys.exit(1)
+
+# Import .geo parser from BinaryQuadTreeTest
+try:
+    from BinaryQuadTreeTest import parse_geo_script, load_geo, validate_geo, Node
+    HAS_GEO = True
+except ImportError:
+    HAS_GEO = False
+    print("Warning: BinaryQuadTreeTest not found - .geo features disabled")
+    HAS_GEO = False
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ENUMS & CONSTANTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class Faction(Enum):
+    NEUTRAL = 0
+    PLAYER = 1
+    ENEMY = 2
+    CONTESTED = 3
+    RESOURCE = 4
+    FORTIFIED = 5
+
+
+FACTION_COLORS = {
+    Faction.NEUTRAL: (150, 150, 150),
+    Faction.PLAYER: (100, 150, 255),
+    Faction.ENEMY: (255, 100, 100),
+    Faction.CONTESTED: (255, 200, 100),
+    Faction.RESOURCE: (100, 255, 150),
+    Faction.FORTIFIED: (200, 100, 255),
+}
+
+# Mask to faction mapping (4-bit masks for .geo)
+MASK_TO_FACTION = {
+    0b0000: Faction.NEUTRAL,
+    0b0001: Faction.PLAYER,
+    0b0010: Faction.ENEMY,
+    0b0100: Faction.CONTESTED,
+    0b1000: Faction.PLAYER,  # Y_LOOP = player expansion
+    0b1100: Faction.ENEMY,   # X_LOOP = enemy expansion
+    0b0111: Faction.CONTESTED,  # Z_LOOP = battle zone
+    0b1001: Faction.RESOURCE,   # DIAG_LOOP = resources
+    0b0110: Faction.RESOURCE,
+    0b1111: Faction.FORTIFIED,  # GATE = fortified
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GAME DATA CLASSES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class Vector2:
+    x: float = 0.0
+    y: float = 0.0
+
+    def __add__(self, other):
+        return Vector2(self.x + other.x, self.y + other.y)
+
+    def __sub__(self, other):
+        return Vector2(self.x - other.x, self.y - other.y)
+
+    def __mul__(self, scalar):
+        return Vector2(self.x * scalar, self.y * scalar)
+
+    def magnitude(self):
+        return math.sqrt(self.x**2 + self.y**2)
+
+    def normalized(self):
+        mag = self.magnitude()
+        if mag > 0:
+            return Vector2(self.x / mag, self.y / mag)
+        return Vector2()
+
+    def distance_to(self, other):
+        return math.sqrt((self.x - other.x)**2 + (self.y - other.y)**2)
+
+
+@dataclass
+class GameObject:
+    x: float = 0.0
+    y: float = 0.0
+    vx: float = 0.0
+    vy: float = 0.0
+    radius: float = 10.0
+    color: Tuple[int, int, int] = (255, 255, 255)
+    health: int = 100
+    max_health: int = 100
+    obj_type: str = "default"
+    data: Dict = field(default_factory=dict)
+    alive: bool = True
+
+    def update(self, dt=1.0):
+        self.x += self.vx * dt
+        self.y += self.vy * dt
+
+    def draw(self, screen, offset=(0, 0)):
+        draw_x = self.x + offset[0]
+        draw_y = self.y + offset[1]
+
+        # Glow effect
+        glow_radius = int(self.radius * 2)
+        glow_surf = pygame.Surface((glow_radius * 2, glow_radius * 2), pygame.SRCALPHA)
+        pygame.draw.circle(glow_surf, (*self.color, 80), (glow_radius, glow_radius), glow_radius)
+        screen.blit(glow_surf, (int(draw_x) - glow_radius, int(draw_y) - glow_radius))
+
+        # Core
+        pygame.draw.circle(screen, self.color, (int(draw_x), int(draw_y)), int(self.radius))
+
+
+@dataclass
+class StarSystem:
+    """A star system that can be conquered and controlled"""
+    name: str = ""
+    x: float = 0.0
+    y: float = 0.0
+    star_type: str = "G"
+    faction: Faction = Faction.NEUTRAL
+    strength: int = 5
+    supply: int = 5
+    morale: int = 5
+    resources: int = 5
+    fortification: int = 0
+    explored: bool = False
+    geo_mask: int = 0b0000  # Current .geo mask state
+    planet_count: int = 0
+    habitable: bool = False
+    special: str = ""
+
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "x": self.x,
+            "y": self.y,
+            "faction": self.faction.name,
+            "strength": self.strength,
+            "supply": self.supply,
+            "morale": self.morale,
+            "resources": self.resources,
+            "explored": self.explored,
+            "geo_mask": self.geo_mask
+        }
+
+    def get_color(self) -> Tuple[int, int, int]:
+        base_color = FACTION_COLORS.get(self.faction, (150, 150, 150))
+        # Pulse effect based on strength
+        pulse = int(30 + 20 * math.sin(pygame.time.get_ticks() / 500))
+        return tuple(min(255, c + pulse) for c in base_color)
+
+    def update_from_geo(self, tick: int):
+        """Update system state based on .geo mask"""
+        self.faction = MASK_TO_FACTION.get(self.geo_mask, Faction.NEUTRAL)
+
+
+@dataclass
+class Fleet(GameObject):
+    """A fleet that can attack territories"""
+    owner: Faction = Faction.NEUTRAL
+    fleet_type: str = "standard"
+    attack_power: int = 10
+    move_speed: float = 3.0
+    target_system: Optional[StarSystem] = None
+
+    def __init__(self, x=0, y=0, owner=Faction.PLAYER, fleet_type="standard"):
+        super().__init__(
+            x=x, y=y,
+            radius=8,
+            color=FACTION_COLORS.get(owner, (255, 255, 255)),
+            obj_type="fleet",
+            data={"owner": owner.name, "fleet_type": fleet_type}
+        )
+        self.owner = owner
+        self.fleet_type = fleet_type
+        self.attack_power = 10 if fleet_type == "standard" else 20 if fleet_type == "heavy" else 5
+        self.move_speed = 3.0 if fleet_type == "standard" else 2.0 if fleet_type == "heavy" else 5.0
+
+
+@dataclass
+class Player:
+    """Player commander data"""
+    x: float = 512.0
+    y: float = 384.0
+    vx: float = 0.0
+    vy: float = 0.0
+    radius: float = 12.0
+    health: int = 100
+    max_health: int = 100
+    shield: int = 100
+    max_shield: int = 100
+    credits: int = 0
+    fuel: int = 100
+    scan_level: int = 1
+    systems_discovered: int = 0
+    systems_conquered: int = 0
+    fleets_destroyed: int = 0
+    speed: float = 5.0
+    selected_fleet_type: str = "standard"
+
+    def update(self, dt=1.0):
+        self.x += self.vx * dt
+        self.y += self.vy * dt
+        if self.shield < self.max_shield:
+            self.shield += 0.5 * dt
+
+    def draw(self, screen, offset=(0, 0)):
+        draw_x = self.x + offset[0]
+        draw_y = self.y + offset[1]
+
+        # Ship triangle
+        points = [
+            (draw_x, draw_y - self.radius),
+            (draw_x - self.radius + 4, draw_y + self.radius - 4),
+            (draw_x + self.radius - 4, draw_y + self.radius - 4)
+        ]
+        pygame.draw.polygon(screen, (100, 200, 255), points)
+        pygame.draw.polygon(screen, (200, 230, 255), points, 2)
+
+        # Shield ring
+        if self.shield < self.max_shield:
+            pygame.draw.circle(screen, (100, 150, 255), (int(draw_x), int(draw_y)), 
+                             int(self.radius + 5), 2)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GALAXY & TERRITORY MANAGER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class GalaxyGenerator:
+    """Generates galaxy with territories using .geo-driven mechanics"""
+
+    def __init__(self, width=1024, height=768):
+        self.width = width
+        self.height = height
+        self.systems: List[StarSystem] = []
+        self.generated = False
+        self.geo_program = None
+        self.faction_program = None
+        self.tick = 0
+
+        # Load .geo scripts
+        if HAS_GEO:
+            try:
+                geo_path = os.path.join(os.path.dirname(__file__), "territory_conquest.geo")
+                faction_path = os.path.join(os.path.dirname(__file__), "faction_wars.geo")
+                
+                if os.path.exists(geo_path):
+                    self.geo_program = load_geo(geo_path)
+                if os.path.exists(faction_path):
+                    self.faction_program = load_geo(faction_path)
+            except Exception as e:
+                print(f"Warning: Could not load .geo scripts: {e}")
+
+    def generate(self, num_systems=40):
+        """Generate galaxy with territories"""
+        star_names = [
+            "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta",
+            "Proxima", "Vega", "Sirius", "Rigel", "Betelgeuse", "Antares", "Deneb",
+            "Sol", "Luna", "Nova", "Pulsar", "Quasar"
+        ]
+
+        # Core systems (center of galaxy) - more valuable
+        for i in range(5):
+            angle = (i / 5) * 2 * math.pi
+            dist = random.uniform(30, 60)
+            system = StarSystem(
+                name=f"{random.choice(star_names)} Prime",
+                x=self.width/2 + math.cos(angle) * dist,
+                y=self.height/2 + math.sin(angle) * dist,
+                star_type=random.choice(["G", "K", "O"]),
+                faction=random.choice([Faction.NEUTRAL, Faction.PLAYER, Faction.ENEMY]),
+                strength=random.randint(5, 10),
+                resources=random.randint(5, 10),
+                fortification=random.randint(0, 3),
+                geo_mask=0b0000,
+                planet_count=random.randint(4, 8),
+                habitable=random.random() < 0.3
+            )
+            self.systems.append(system)
+
+        # Inner ring - contested frontier
+        for i in range(num_systems // 2):
+            angle = random.uniform(0, 2 * math.pi)
+            dist = random.uniform(80, 150)
+            system = StarSystem(
+                name=f"{random.choice(star_names)}-{i+1}",
+                x=self.width/2 + math.cos(angle) * dist,
+                y=self.height/2 + math.sin(angle) * dist,
+                star_type=random.choice(["G", "G", "K", "K", "M"]),
+                faction=random.choice([Faction.NEUTRAL, Faction.CONTESTED]),
+                strength=random.randint(3, 7),
+                resources=random.randint(2, 6),
+                geo_mask=0b0100,  # Contested
+                planet_count=random.randint(2, 6),
+                habitable=random.random() < 0.15
+            )
+            self.systems.append(system)
+
+        # Outer ring - deep space resources
+        for i in range(num_systems // 2):
+            angle = random.uniform(0, 2 * math.pi)
+            dist = random.uniform(180, min(self.width, self.height) / 2 - 30)
+            system = StarSystem(
+                name=f"{random.choice(star_names)} Outer-{i+1}",
+                x=self.width/2 + math.cos(angle) * dist,
+                y=self.height/2 + math.sin(angle) * dist,
+                star_type=random.choice(["M", "M", "K", "B"]),
+                faction=random.choice([Faction.NEUTRAL, Faction.RESOURCE]),
+                strength=random.randint(2, 5),
+                resources=random.randint(5, 10),
+                geo_mask=0b1001 if random.random() < 0.3 else 0b0000,
+                planet_count=random.randint(1, 4),
+                special=random.choice(["", "", "", "pulsar", "ruins", "wormhole"])
+            )
+            self.systems.append(system)
+
+        self.generated = True
+
+    def update_geo(self, dt=1.0):
+        """Update all systems using .geo scripts"""
+        if not self.generated or not HAS_GEO:
+            return
+
+        self.tick += int(dt)
+
+        for system in self.systems:
+            # Calculate depth based on distance from center
+            dx = system.x - self.width / 2
+            dy = system.y - self.height / 2
+            dist = math.sqrt(dx*dx + dy*dy)
+            depth = min(5, int(dist / 50))
+
+            # Create a node for this system to run .geo program
+            if self.geo_program:
+                # Run .geo program step for this system
+                node = Node(0, 0, 1, depth, system.geo_mask)
+                self.geo_program.step(node, self.tick)
+                system.geo_mask = node.mask
+                system.update_from_geo(self.tick)
+
+            # Update system variables based on faction
+            if system.faction == Faction.PLAYER:
+                system.supply = min(10, system.supply + 0.01 * dt)
+            elif system.faction == Faction.ENEMY:
+                system.strength = min(10, system.strength + 0.008 * dt)
+
+    def get_nearest_system(self, x, y, max_dist=50) -> Optional[StarSystem]:
+        """Find nearest system within range"""
+        nearest = None
+        min_dist = float('inf')
+        for system in self.systems:
+            dist = math.sqrt((system.x - x)**2 + **(system.y - y)2)
+            if dist < min_dist and dist <= max_dist:
+                nearest = system
+                min_dist = dist
+        return nearest
+
+    def get_systems_by_faction(self, faction: Faction) -> List[StarSystem]:
+        """Get all systems controlled by a faction"""
+        return [s for s in self.systems if s.faction == faction]
+
+    def get_total_strength(self, faction: Faction) -> int:
+        """Get total military strength for a faction"""
+        return sum(s.strength for s in self.systems if s.faction == faction)
+
+    def get_total_resources(self, faction: Faction) -> int:
+        """Get total resources for a faction"""
+        return sum(s.resources for s in self.systems if s.faction == faction)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMBAT MANAGER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CombatManager:
+    """Manages fleet combat and territory attacks"""
+
+    def __init__(self):
+        self.fleets: List[Fleet] = []
+        self.projectiles: List[GameObject] = []
+        self.tick = 0
+        self.in_combat = False
+        self.wave = 0
+        self.active_battle: Optional[StarSystem] = None
+
+    def spawn_enemy_fleet(self, system: StarSystem, count=3):
+        """Spawn enemy fleets from a system"""
+        for i in range(count):
+            fleet = Fleet(
+                x=system.x + random.uniform(-30, 30),
+                y=system.y + random.uniform(-30, 30),
+                owner=Faction.ENEMY,
+                fleet_type=random.choice(["standard", "standard", "heavy"])
+            )
+            fleet.vx = random.uniform(-1, 1)
+            fleet.vy = random.uniform(-1, 1)
+            self.fleets.append(fleet)
+
+    def start_battle(self, system: StarSystem):
+        """Start battle at a system"""
+        self.in_combat = True
+        self.active_battle = system
+        self.tick = 0
+        self.wave = 1
+        self.spawn_enemy_fleet(system, 2 + system.strength // 3)
+
+    def update(self, dt=1.0, player=None):
+        """Update combat state"""
+        if not self.in_combat:
+            # Patrol enemy fleets
+            for fleet in self.fleets:
+                if fleet.owner == Faction.ENEMY:
+                    fleet.update(dt)
+                    # Keep fleets near their systems
+                    if fleet.target_system:
+                        dx = fleet.target_system.x - fleet.x
+                        dy = fleet.target_system.y - fleet.y
+                        dist = math.sqrt(dx*dx + dy*dy)
+                        if dist > 20:
+                            fleet.vx = (dx / dist) * fleet.move_speed * 0.5
+                            fleet.vy = (dy / dist) * fleet.move_speed * 0.5
+            return
+
+        self.tick += int(dt)
+
+        # Update fleets
+        for fleet in self.fleets:
+            if fleet.alive:
+                if fleet.owner == Faction.ENEMY and player:
+                    # Move toward player
+                    dx = player.x - fleet.x
+                    dy = player.y - fleet.y
+                    dist = math.sqrt(dx*dx + dy*dy)
+                    if dist > 0:
+                        fleet.vx = (dx / dist) * fleet.move_speed
+                        fleet.vy = (dy / dist) * fleet.move_speed
+                fleet.update(dt)
+
+        # Update projectiles
+        for proj in self.projectiles:
+            proj.update(dt)
+            if proj.x < 0 or proj.x > 1024 or proj.y < 0 or proj.y > 768:
+                proj.alive = False
+
+        # Cleanup
+        self.fleets = [f for f in self.fleets if f.alive]
+        self.projectiles = [p for p in self.projectiles if p.alive]
+
+        # Check battle end
+        enemy_fleets = [f for f in self.fleets if f.owner == Faction.ENEMY]
+        if len(enemy_fleets) == 0 and self.tick > 60:
+            self.in_combat = False
+            if self.active_battle:
+                self.active_battle.strength = max(0, self.active_battle.strength - 3)
+                if self.active_battle.strength <= 0:
+                    self.active_battle.faction = Faction.PLAYER
+            self.active_battle = None
+
+    def player_attack(self, player) -> Optional[Fleet]:
+        """Player fires at nearest enemy"""
+        nearest = None
+        min_dist = float('inf')
+        for fleet in self.fleets:
+            if fleet.owner == Faction.ENEMY:
+                dist = math.sqrt((fleet.x - player.x)**2 + **(fleet.y - player.y)2)
+                if dist < min_dist:
+                    nearest = fleet
+                    min_dist = dist
+
+        if nearest and min_dist < 150:
+            proj = GameObject(
+                x=player.x, y=player.y,
+                vx=0, vy=-12,
+                radius=4,
+                color=(255, 255, 100),
+                obj_type="projectile"
+            )
+            self.projectiles.append(proj)
+
+            # Check hit
+            for fleet in self.fleets:
+                if fleet.owner == Faction.ENEMY:
+                    dist = math.sqrt((fleet.x - proj.x)**2 + **(fleet.y - proj.y)2)
+                    if dist < fleet.radius + 10:
+                        fleet.health -= fleet.attack_power
+                        if fleet.health <= 0:
+                            fleet.alive = False
+                            player.fleets_destroyed += 1
+                            player.credits += 25
+                        return fleet
+        return None
+
+    def draw(self, screen, offset=(0, 0)):
+        """Draw combat elements"""
+        for fleet in self.fleets:
+            fleet.draw(screen, offset)
+        for proj in self.projectiles:
+            proj.draw(screen, offset)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN GAME CLASS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CosmicOriginsGame:
+    """Main territorial conquest game class"""
+
+    def __init__(self, width=1024, height=768):
+        self.width = width
+        self.height = height
+        self.state = "menu"  # menu, galaxy, combat, paused
+        self.tick = 0
+
+        # Initialize pygame
+        pygame.init()
+        self.screen = pygame.display.set_mode((width, height))
+        pygame.display.set_caption("Cosmic Origins - Territorial Conquest (.geo Powered)")
+        self.clock = pygame.time.Clock()
+        self.font = pygame.font.Font(None, 36)
+        self.small_font = pygame.font.Font(None, 24)
+
+        # Game systems
+        self.galaxy = GalaxyGenerator(width, height)
+        self.combat = CombatManager()
+
+        # Player
+        self.player = Player()
+
+        # Camera
+        self.camera_x = 0
+        self.camera_y = 0
+
+        # Stars background
+        self.stars = [(random.randint(0, width), random.randint(0, height),
+                      random.uniform(0.5, 2)) for _ in range(200)]
+
+        # Territory overlay
+        self.show_territory_overlay = True
+
+        # Messages
+        self.messages: List[Tuple[str, int]] = []
+
+    def add_message(self, text: str, duration=120):
+        """Add a temporary message"""
+        self.messages.append((text, duration))
+
+    def handle_events(self):
+        """Handle input events"""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    if self.state == "paused":
+                        self.state = "galaxy"
+                    else:
+                        return False
+                elif event.key == pygame.K_p:
+                    self.state = "paused" if self.state != "paused" else "galaxy"
+                elif event.key == pygame.K_TAB:
+                    self.show_territory_overlay = not self.show_territory_overlay
+                elif event.key == pygame.K_SPACE:
+                    if self.state == "combat":
+                        self.combat.player_attack(self.player)
+                    elif self.state == "galaxy":
+                        self._attack_system()
+                elif event.key == pygame.K_e:
+                    self._interact()
+                elif event.key == pygame.K_r:
+                    self._start_new_game()
+                elif event.key == pygame.K_1:
+                    self.player.selected_fleet_type = "light"
+                    self.add_message("Light Fleet Selected")
+                elif event.key == pygame.K_2:
+                    self.player.selected_fleet_type = "standard"
+                    self.add_message("Standard Fleet Selected")
+                elif event.key == pygame.K_3:
+                    self.player.selected_fleet_type = "heavy"
+                    self.add_message("Heavy Fleet Selected")
+
+        return True
+
+    def _attack_system(self):
+        """Attack nearest enemy system"""
+        system = self.galaxy.get_nearest_system(self.player.x, self.player.y, 60)
+        if system:
+            if system.faction == Faction.ENEMY:
+                self.combat.start_battle(system)
+                self.state = "combat"
+                self.add_message(f"Attacking {system.name}!")
+            elif system.faction == Faction.CONTESTED:
+                # Contest the system
+                system.strength -= 2
+                if system.strength <= 0:
+                    system.faction = Faction.PLAYER
+                    self.player.systems_conquered += 1
+                    self.add_message(f"Conquered {system.name}!")
+                else:
+                    self.add_message(f"Contesting {system.name}...")
+            elif system.faction == Faction.NEUTRAL:
+                system.faction = Faction.PLAYER
+                self.player.systems_conquered += 1
+                self.add_message(f"Claimed {system.name}!")
+
+    def _interact(self):
+        """Interact with nearby systems"""
+        system = self.galaxy.get_nearest_system(self.player.x, self.player.y, 40)
+        if system and system.faction == Faction.PLAYER:
+            # Collect resources
+            income = system.resources * 5
+            self.player.credits += income
+            self.add_message(f"Collected {income} credits from {system.name}")
+
+    def _start_new_game(self):
+        """Start new game"""
+        self.galaxy = GalaxyGenerator(self.width, self.height)
+        self.galaxy.generate(40)
+        self.player = Player()
+        self.player.x = self.width / 2
+        self.player.y = self.height / 2
+        self.state = "galaxy"
+        self.add_message("New Game Started - Conquer the Galaxy!")
+
+    def update(self, dt=1.0):
+        """Update game state"""
+        if self.state == "paused":
+            return
+
+        self.tick += dt
+
+        # Update galaxy (.geo driven)
+        self.galaxy.update_geo(dt)
+
+        # Player movement
+        keys = pygame.key.get_pressed()
+        if self.state == "galaxy":
+            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                self.player.x -= self.player.speed * dt
+            if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                self.player.x += self.player.speed * dt
+            if keys[pygame.K_UP] or keys[pygame.K_w]:
+                self.player.y -= self.player.speed * dt
+            if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+                self.player.y += self.player.speed * dt
+
+        # Clamp player to bounds
+        self.player.x = max(0, min(self.width, self.player.x))
+        self.player.y = max(0, min(self.height, self.player.y))
+
+        # Update camera
+        self.camera_x = self.player.x - self.width / 2
+        self.camera_y = self.player.y - self.height / 2
+
+        # Update combat
+        if self.state == "combat":
+            self.combat.update(dt, self.player)
+
+            # Check projectile collisions
+            for proj in self.combat.projectiles:
+                for fleet in self.combat.fleets:
+                    if fleet.owner == Faction.ENEMY:
+                        dx = proj.x - fleet.x
+                        dy = proj.y - fleet.y
+                        dist = math.sqrt(dx*dx + dy*dy)
+                        if dist < fleet.radius + proj.radius:
+                            fleet.health -= 15
+                            proj.alive = False
+                            if fleet.health <= 0:
+                                fleet.alive = False
+                                self.player.fleets_destroyed += 1
+                                self.player.credits += 50
+
+        # Update player
+        self.player.update(dt)
+
+        # Update messages
+        self.messages = [(msg, dur - dt) for msg, dur in self.messages if dur - dt > 0]
+
+    def draw(self):
+        """Render game"""
+        # Clear screen
+        self.screen.fill((5, 10, 30))
+
+        # Draw stars
+        for sx, sy, size in self.stars:
+            brightness = int(155 + 100 * random.random())
+            pygame.draw.circle(self.screen, (brightness, brightness, brightness),
+                             (int(sx), int(sy)), int(size))
+
+        if self.state == "menu":
+            self._draw_menu()
+        elif self.state == "galaxy":
+            self._draw_galaxy()
+        elif self.state == "combat":
+            self._draw_combat()
+        elif self.state == "paused":
+            self._draw_paused()
+
+        # Draw UI
+        self._draw_ui()
+        self._draw_messages()
+
+        pygame.display.flip()
+
+    def _draw_menu(self):
+        """Draw main menu"""
+        title = self.font.render("COSMIC ORIGINS", True, (100, 200, 255))
+        subtitle = self.small_font.render("TERRITORIAL CONQUEST - .geo Powered", True, (150, 150, 150))
+
+        self.screen.blit(title, (self.width/2 - title.get_width()/2, self.height/3))
+        self.screen.blit(subtitle, (self.width/2 - subtitle.get_width()/2, self.height/3 + 50))
+
+        # Start prompt
+        prompt = self.small_font.render("Press R to Start", True, (200, 200, 200))
+        self.screen.blit(prompt, (self.width/2 - prompt.get_width()/2, self.height/2))
+
+        # Controls
+        controls = [
+            "Arrow Keys / WASD - Move Ship",
+            "Space - Attack Territory",
+            "E - Collect Resources",
+            "1-3 - Select Fleet Type",
+            "Tab - Toggle Territory Overlay",
+            "P - Pause"
+        ]
+        for i, ctrl in enumerate(controls):
+            text = self.small_font.render(ctrl, True, (100, 150, 180))
+            self.screen.blit(text, (self.width/2 - text.get_width()/2, self.height/2 + 50 + i*25))
+
+    def _draw_galaxy(self):
+        """Draw galaxy with territories"""
+        offset = (-self.camera_x, -self.camera_y)
+
+        # Draw territory connections
+        if self.show_territory_overlay:
+            player_systems = self.galaxy.get_systems_by_faction(Faction.PLAYER)
+            for sys1 in player_systems:
+                for sys2 in player_systems:
+                    if sys1 != sys2:
+                        dx = sys2.x - sys1.x
+                        dy = sys2.y - sys1.y
+                        dist = math.sqrt(dx*dx + dy*dy)
+                        if dist < 100:
+                            pygame.draw.line(self.screen, (50, 100, 150, 128),
+                                           (sys1.x, sys1.y), (sys2.x, sys2.y), 1)
+
+        # Draw star systems
+        for system in self.galaxy.systems:
+            color = system.get_color()
+            radius = 6 + system.strength // 2
+
+            # Territory border based on faction
+            border_color = FACTION_COLORS.get(system.faction, (150, 150, 150))
+            pygame.draw.circle(self.screen, border_color, 
+                             (int(system.x), int(system.y)), radius + 4, 2)
+
+            # Core system
+            pygame.draw.circle(self.screen, color, 
+                             (int(system.x), int(system.y)), radius)
+
+            # Resource indicator
+            if system.resources >= 7:
+                pygame.draw.circle(self.screen, (100, 255, 100),
+                                 (int(system.x), int(system.y)), radius + 7, 2)
+
+            # Fortification indicator
+            if system.fortification > 0:
+                pygame.draw.circle(self.screen, (200, 100, 255),
+                                 (int(system.x), int(system.y)), radius + 10, 2)
+
+            # Name (if explored or close)
+            dx = system.x - self.player.x
+            dy = system.y - self.player.y
+            dist = math.sqrt(dx*dx + dy*dy)
+            if dist < 120 or system.explored:
+                name_surf = self.small_font.render(system.name, True, (200, 200, 200))
+                self.screen.blit(name_surf, (system.x + 10, system.y - 10))
+
+                # Strength indicator
+                str_surf = self.small_font.render(f"STR:{system.strength}", True, (180, 180, 180))
+                self.screen.blit(str_surf, (system.x + 10, system.y + 5))
+
+        # Draw player
+        self.player.draw(self.screen, offset)
+
+        # Draw combat fleets
+        for fleet in self.combat.fleets:
+            fleet.draw(self.screen, offset)
+
+    def _draw_combat(self):
+        """Draw combat view"""
+        offset = (-self.camera_x, -self.camera_y)
+
+        # Draw battle background
+        if self.combat.active_battle:
+            pygame.draw.circle(self.screen, (50, 20, 20),
+                             (int(self.combat.active_battle.x), int(self.combat.active_battle.y)), 80, 3)
+
+        # Draw enemy fleets
+        for fleet in self.combat.fleets:
+            fleet.draw(self.screen, offset)
+
+        # Draw projectiles
+        for proj in self.combat.projectiles:
+            proj.draw(screen=self.screen, offset=offset)
+
+        # Draw player
+        self.player.draw(self.screen, offset)
+
+        # Wave info
+        wave_text = self.small_font.render(
+            f"Battle at {self.combat.active_battle.name if self.combat.active_battle else 'Unknown'} - "
+            f"Enemies: {len([f for f in self.combat.fleets if f.owner == Faction.ENEMY])}",
+            True, (255, 200, 100))
+        self.screen.blit(wave_text, (self.width/2 - wave_text.get_width()/2, 50))
+
+    def _draw_paused(self):
+        """Draw pause screen"""
+        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        self.screen.blit(overlay, (0, 0))
+
+        pause_text = self.font.render("PAUSED", True, (255, 255, 255))
+        self.screen.blit(pause_text, (self.width/2 - pause_text.get_width()/2, self.height/3))
+
+        resume = self.small_font.render("Press P to Resume", True, (200, 200, 200))
+        self.screen.blit(resume, (self.width/2 - resume.get_width()/2, self.height/2))
+
+    def _draw_ui(self):
+        """Draw HUD"""
+        # Player stats
+        stats = [
+            f"Health: {self.player.health}/{self.player.max_health}",
+            f"Shield: {int(self.player.shield)}/{self.player.max_shield}",
+            f"Credits: {self.player.credits}",
+            f"Systems: {self.player.systems_conquered}",
+            f"Fleets: {self.player.fleets_destroyed}",
+        ]
+
+        for i, stat in enumerate(stats):
+            color = (255, 100, 100) if "Health" in stat and self.player.health < 30 else (200, 200, 200)
+            surf = self.small_font.render(stat, True, color)
+            self.screen.blit(surf, (10, 10 + i * 22))
+
+        # Faction summary
+        player_str = self.galaxy.get_total_strength(Faction.PLAYER)
+        enemy_str = self.galaxy.get_total_strength(Faction.ENEMY)
+        summary = self.small_font.render(f"Power - You: {player_str} | Enemy: {enemy_str}", 
+                                        True, (150, 200, 255))
+        self.screen.blit(summary, (10, self.height - 60))
+
+        # Territory count
+        player_sys = len(self.galaxy.get_systems_by_faction(Faction.PLAYER))
+        enemy_sys = len(self.galaxy.get_systems_by_faction(Faction.ENEMY))
+        contested_sys = len(self.galaxy.get_systems_by_faction(Faction.CONTESTED))
+        territory = self.small_font.render(f"Territory - You: {player_sys} | Enemy: {enemy_sys} | Contested: {contested_sys}",
+                                          True, (150, 200, 150))
+        self.screen.blit(territory, (10, self.height - 35))
+
+        # State indicator
+        state_colors = {
+            "menu": (255, 255, 255),
+            "galaxy": (100, 200, 255),
+            "combat": (255, 100, 100),
+            "paused": (255, 255, 0)
+        }
+        state_text = self.small_font.render(f"Mode: {self.state.upper()}", True,
+                                           state_colors.get(self.state, (255, 255, 255)))
+        self.screen.blit(state_text, (self.width - 150, 10))
+
+        # Fleet type
+        fleet_text = self.small_font.render(f"Fleet: {self.player.selected_fleet_type.upper()}", 
+                                           True, (200, 200, 100))
+        self.screen.blit(fleet_text, (self.width - 150, 35))
+
+        # FPS
+        fps = self.clock.get_fps()
+        fps_color = (100, 255, 100) if fps >= 55 else (255, 200, 100) if fps >= 30 else (255, 100, 100)
+        fps_surf = self.small_font.render(f"FPS: {int(fps)}", True, fps_color)
+        self.screen.blit(fps_surf, (self.width - 80, 35))
+
+    def _draw_messages(self):
+        """Draw temporary messages"""
+        for i, (msg, dur) in enumerate(self.messages):
+            alpha = min(255, int(255 * (dur / 60)))
+            surf = self.small_font.render(msg, True, (255, 255, 200))
+            surf.set_alpha(alpha)
+            self.screen.blit(surf, (self.width/2 - surf.get_width()/2, 100 + i * 25))
+
+    def run(self, fps=60):
+        """Main game loop"""
+        running = True
+
+        while running:
+            running = self.handle_events()
+            self.update(dt=1.0)
+            self.draw()
+            self.clock.tick(fps)
+
+        pygame.quit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ENTRY POINT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def main():
+    """Game entry point"""
+    import argparse
+    parser = argparse.ArgumentParser(description="Cosmic Origins - Territorial Conquest")
+    parser.add_argument("--width", type=int, default=1024, help="Window width")
+    parser.add_argument("--height", type=int, default=768, help="Window height")
+    parser.add_argument("--fps", type=int, default=60, help="Target FPS")
+    args = parser.parse_args()
+
+    if sys.platform == 'win32':
+        sys.stdout.reconfigure(encoding='utf-8')
+
+    if not HAS_PYGAME:
+        print("Error: pygame required. Install with: pip install pygame")
+        return
+
+    game = CosmicOriginsGame(args.width, args.height)
+    game.run(args.fps)
+
+
+if __name__ == "__main__":
+    main()

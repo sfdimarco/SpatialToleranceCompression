@@ -11,20 +11,21 @@ DEFINE is_mid          depth_in=3..5
 DEFINE is_deep         depth>=6
 DEFINE is_active       family=Y_LOOP
 DEFINE is_charged      family=X_LOOP
-DEFINE is_void         family=GATE
+DEFINE is_void         mask=0000
 DEFINE is_radiating    family=Z_LOOP
+DEFINE is_diag         family=DIAG_LOOP
 
 # --- Core behavior: slow rotation (like massive bodies) ---
-RULE IF is_core AND is_active          THEN ROTATE_CW + ADVANCE 2    AS core-spin
+RULE IF is_core AND is_active          THEN ROTATE_CW + ADVANCE 1    AS core-spin
 RULE IF is_core AND is_void            THEN SWITCH Y_LOOP            AS core-ignite
 
 # --- Mid layer: orbital cycling with periodic boosts ---
 RULE IF is_mid AND tick%12=0           THEN SWITCH X_LOOP            AS orbit-boost
-RULE IF is_mid AND is_charged          THEN ADVANCE 3                AS orbit-fast
+RULE IF is_mid AND is_charged          THEN ADVANCE 2                AS orbit-fast
 RULE IF is_mid AND is_radiating        THEN FLIP_H + FLIP_V          AS orbit-flip
 
 # --- Deep layer: stochastic flares (fusion events) ---
-RULE IF is_deep AND random<0.15        THEN GATE_ON                  AS flare-up
+RULE IF is_deep AND random<0.15        THEN SET 1111                 AS flare-up
 RULE IF is_deep AND is_void AND random<0.25  THEN SWITCH Z_LOOP      AS flare-ignite
 RULE IF is_deep AND is_radiating       THEN ADVANCE                  AS flare-decay
 
@@ -37,7 +38,10 @@ RULE IF is_void AND tick%8=0           THEN SWITCH Y_LOOP            AS emit-par
 RULE IF is_void AND random<0.05        THEN SWITCH X_LOOP            AS random-spawn
 
 # --- Radiating decay back to void (energy dissipation) ---
-RULE IF is_radiating AND tick%6=0      THEN GATE_OFF                 AS energy-decay
+RULE IF is_radiating AND tick%6=0      THEN SET 0000                 AS energy-decay
+
+# --- Diagonal loop behavior ---
+RULE IF is_diag AND tick%4=0           THEN SWITCH Y_LOOP            AS diag-reset
 
 # --- Default: gentle advancement ---
 DEFAULT ADVANCE
