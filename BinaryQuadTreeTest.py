@@ -289,6 +289,13 @@ def IF_tick_mod(period: int, remainder: int = 0) -> Cond:
         def __repr__(self): return f"tick%{period}=={remainder}"
     return _C()
 
+def IF_tick_eq(n: int) -> Cond:
+    """True when tick == n (exact equality)."""
+    class _C(Cond):
+        def _test(self, _, tick, *args): return tick == n
+        def __repr__(self): return f"tick=={n}"
+    return _C()
+
 def IF_depth_gte(n: int) -> Cond:
     """True when node.depth >= n."""
     class _C(Cond):
@@ -336,6 +343,17 @@ def IF_neighbor_count(name: str, count: int) -> Cond:
         def __repr__(self): return f"nb_count({name})=={count}"
     return _C()
 
+def IF_neighbor_count_lte(name: str, count: int) -> Cond:
+    """True when count of 4 cardinal neighbors in the named family <= count."""
+    class _C(Cond):
+        def _test(self, node, tick, ctx):
+            neighbor_count = sum(1 for d in ("N","S","E","W")
+                    if ctx.get(f"nb_{d}") is not None
+                    and family_of(ctx[f"nb_{d}"]) == name)
+            return neighbor_count <= count
+        def __repr__(self): return f"nb_count_lte({name})<={count}"
+    return _C()
+
 def IF_neighbor_count8(name: str, count: int) -> Cond:
     """True when exactly `count` of the 8 neighbors (including diagonals) are in the named family."""
     class _C(Cond):
@@ -345,6 +363,28 @@ def IF_neighbor_count8(name: str, count: int) -> Cond:
                     and family_of(ctx[f"nb_{d}"]) == name)
             return neighbor_count == count
         def __repr__(self): return f"nb_count8({name})=={count}"
+    return _C()
+
+def IF_neighbor_count8_gte(name: str, count: int) -> Cond:
+    """True when count of 8 neighbors in the named family >= count."""
+    class _C(Cond):
+        def _test(self, node, tick, ctx):
+            neighbor_count = sum(1 for d in ("N","S","E","W","NE","NW","SE","SW")
+                    if ctx.get(f"nb_{d}") is not None
+                    and family_of(ctx[f"nb_{d}"]) == name)
+            return neighbor_count >= count
+        def __repr__(self): return f"nb_count8_gte({name})>={count}"
+    return _C()
+
+def IF_neighbor_count8_lte(name: str, count: int) -> Cond:
+    """True when count of 8 neighbors in the named family <= count."""
+    class _C(Cond):
+        def _test(self, node, tick, ctx):
+            neighbor_count = sum(1 for d in ("N","S","E","W","NE","NW","SE","SW")
+                    if ctx.get(f"nb_{d}") is not None
+                    and family_of(ctx[f"nb_{d}"]) == name)
+            return neighbor_count <= count
+        def __repr__(self): return f"nb_count8_lte({name})<={count}"
     return _C()
 
 def IF_neighbor_mask_count(mask_value: int, count: int) -> Cond:
@@ -483,11 +523,25 @@ def IF_tick_between(lo: int, hi: int) -> Cond:
         def __repr__(self): return f"tick_in({lo}..{hi})"
     return _C()
 
+def IF_tick_mod_between(period: int, lo: int, hi: int) -> Cond:
+    """True when lo <= (tick % period) <= hi (inclusive range)."""
+    class _C(Cond):
+        def _test(self, _, tick, *args): return lo <= (tick % period) <= hi
+        def __repr__(self): return f"tick%{period}_in({lo}..{hi})"
+    return _C()
+
 def IF_depth_between(lo: int, hi: int) -> Cond:
     """True when lo <= node.depth <= hi (inclusive range)."""
     class _C(Cond):
         def _test(self, node, *args): return lo <= node.depth <= hi
         def __repr__(self): return f"depth_in({lo}..{hi})"
+    return _C()
+
+def IF_depth_mod(period: int, remainder: int = 0) -> Cond:
+    """True when depth % period == remainder."""
+    class _C(Cond):
+        def _test(self, node, *args): return node.depth % period == remainder
+        def __repr__(self): return f"depth%{period}=={remainder}"
     return _C()
 
 def IF_var_gte(name: str, value: int) -> Cond:
@@ -512,6 +566,30 @@ def IF_var_lt(name: str, value: int) -> Cond:
         def _test(self, node, tick, ctx):
             return ctx["vars"].get(name, 0) < value
         def __repr__(self): return f"var_{name}<{value}"
+    return _C()
+
+def IF_var_lte(name: str, value: int) -> Cond:
+    """True when cell variable `name` <= value (from ctx)."""
+    class _C(Cond):
+        def _test(self, node, tick, ctx):
+            return ctx["vars"].get(name, 0) <= value
+        def __repr__(self): return f"var_{name}<={value}"
+    return _C()
+
+def IF_var_between(name: str, lo: int, hi: int) -> Cond:
+    """True when lo <= cell variable `name` <= hi (inclusive range)."""
+    class _C(Cond):
+        def _test(self, node, tick, ctx):
+            return lo <= ctx["vars"].get(name, 0) <= hi
+        def __repr__(self): return f"var_{name}_in({lo}..{hi})"
+    return _C()
+
+def IF_random_gte(prob: float) -> Cond:
+    """True with probability (1.0 - prob) each evaluation."""
+    import random as _rand
+    class _C(Cond):
+        def _test(self, *args): return _rand.random() >= prob
+        def __repr__(self): return f"random>={prob}"
     return _C()
 
 def IF_signal(name: str) -> Cond:
@@ -1325,6 +1403,7 @@ def parse_geo_script(text: str, base_dir: str = None) -> Program:
     """Parse a .geo script string and return a ready-to-run Program.
 
     base_dir is used to resolve INCLUDE paths; defaults to cwd.
+    Supports multi-line rules by joining continuation lines.
     """
     rules:   List[Rule] = []
     name:    str        = "script"
@@ -1334,10 +1413,51 @@ def parse_geo_script(text: str, base_dir: str = None) -> Program:
     if base_dir is None:
         base_dir = _os.getcwd()
 
+    # Pre-process: join continuation lines (lines not starting with a keyword)
+    valid_keywords = {"NAME", "RULE", "DEFAULT", "DEFINE", "INCLUDE"}
+    continuation_keywords = {"THEN", "AS"}  # These should be joined with previous line
+    lines = []
+    current_line = ""
+    
     for raw in text.splitlines():
+        # Strip comments
         line = raw.split("#")[0].strip()
-        if not line:
+        # Also check if line is empty or only decorative characters
+        is_empty = not line or all(c in "═─│┌┐└┘├┤┬┴┼═" for c in line)
+        
+        if is_empty:
+            if current_line:
+                lines.append(current_line)
+                current_line = ""
             continue
+        
+        # Check if this starts with a keyword
+        first_token = line.split()[0].upper() if line.split() else ""
+        
+        if first_token in valid_keywords:
+            # New statement - save previous line if any
+            if current_line:
+                lines.append(current_line)
+            current_line = line
+        elif first_token in continuation_keywords:
+            # Continuation keyword - always join with previous line
+            if current_line:
+                current_line += " " + line
+            else:
+                current_line = line
+        else:
+            # Continuation line - append to current
+            if current_line:
+                current_line += " " + line
+            else:
+                # Orphan continuation - treat as new line
+                current_line = line
+    
+    # Don't forget the last line
+    if current_line:
+        lines.append(current_line)
+
+    for line in lines:
         tokens = line.split()
         kw = tokens[0].upper()
 
@@ -1367,7 +1487,7 @@ def parse_geo_script(text: str, base_dir: str = None) -> Program:
 
 def load_geo(filepath: str) -> Program:
     """Load a .geo script from disk and return a ready-to-run Program."""
-    with open(filepath, "r") as f:
+    with open(filepath, "r", encoding="utf-8") as f:
         text = f.read()
     return parse_geo_script(text, _os.path.dirname(_os.path.abspath(filepath)))
 
@@ -1496,8 +1616,26 @@ def _parse_atom(tokens: List[str]) -> Cond:
     if lo.startswith("tick<"):
         return IF_tick_lt(int(tok.split("<", 1)[1]))
 
+    if lo.startswith("tick="):
+        # tick=N → exact tick equality
+        return IF_tick_eq(int(tok.split("=", 1)[1]))
+
     if lo.startswith("tick%"):
         rest = tok[5:]
+        if "_in=" in rest:
+            # tick%P_in=A..B  →  lo <= (tick % P) <= hi
+            p, range_part = rest.split("_in=", 1)
+            lo_val, hi_val = range_part.split("..")
+            return IF_tick_mod_between(int(p), int(lo_val), int(hi_val))
+        if "<" in rest and "=" not in rest:
+            # tick%P<R  →  (tick % P) < R
+            p, r = rest.split("<", 1)
+            period = int(p)
+            threshold = int(r)
+            class _C(Cond):
+                def _test(self, _, tick, *args): return (tick % period) < threshold
+                def __repr__(self): return f"tick%{period}<{threshold}"
+            return _C()
         if "=" in rest:
             p, r = rest.split("=", 1)
             return IF_tick_mod(int(p), int(r))
@@ -1517,6 +1655,14 @@ def _parse_atom(tokens: List[str]) -> Cond:
     if lo.startswith("depth="):
         return IF_depth_eq(int(tok.split("=", 1)[1]))
 
+    if lo.startswith("depth%"):
+        # depth%N=R → depth modulo N equals R
+        rest = tok[6:]
+        if "=" in rest:
+            p, r = rest.split("=", 1)
+            return IF_depth_mod(int(p), int(r))
+        return IF_depth_mod(int(rest), 0)
+
     if lo.startswith("active>="):
         return IF_active_gte(int(tok.split(">=", 1)[1]))
 
@@ -1530,6 +1676,21 @@ def _parse_atom(tokens: List[str]) -> Cond:
         raw = tok.split("=", 1)[1]
         fam, n = raw.rsplit(":", 1)
         return IF_neighbor_count_gte(fam, int(n))
+
+    if lo.startswith("nb_count_lte="):
+        raw = tok.split("=", 1)[1]
+        fam, n = raw.rsplit(":", 1)
+        return IF_neighbor_count_lte(fam, int(n))
+
+    if lo.startswith("nb_count8_gte="):
+        raw = tok.split("=", 1)[1]
+        fam, n = raw.rsplit(":", 1)
+        return IF_neighbor_count8_gte(fam, int(n))
+
+    if lo.startswith("nb_count8_lte="):
+        raw = tok.split("=", 1)[1]
+        fam, n = raw.rsplit(":", 1)
+        return IF_neighbor_count8_lte(fam, int(n))
 
     if lo.startswith("nb_count8="):
         raw = tok.split("=", 1)[1]
@@ -1589,17 +1750,27 @@ def _parse_atom(tokens: List[str]) -> Cond:
     if lo.startswith("own_prog="):
         return IF_own_prog(tok.split("=", 1)[1])
 
+    if lo.startswith("random>="):
+        return IF_random_gte(float(tok.split(">=", 1)[1]))
+
     if lo.startswith("random<"):
         return IF_random_lt(float(tok.split("<", 1)[1]))
 
     if lo.startswith("signal="):
         return IF_signal(tok.split("=", 1)[1])
 
-    # Cell variable conditions: var_heat>=3, var_heat=0, var_heat<5
-    if lo.startswith("var_") and (">=" in tok or "<" in tok or "=" in tok):
-        if ">=" in tok:
+    # Cell variable conditions: var_heat>=3, var_heat<=5, var_heat=0, var_heat<5, var_heat_in=2..4
+    if lo.startswith("var_") and ("_in=" in tok or ">=" in tok or "<=" in tok or "<" in tok or "=" in tok):
+        if "_in=" in tok:
+            name_part, range_part = tok.split("_in=", 1)
+            lo_val, hi_val = range_part.split("..")
+            return IF_var_between(name_part[4:], int(lo_val), int(hi_val))
+        elif ">=" in tok:
             name_part, val = tok.split(">=", 1)
             return IF_var_gte(name_part[4:], int(val))
+        elif "<=" in tok:
+            name_part, val = tok.split("<=", 1)
+            return IF_var_lte(name_part[4:], int(val))
         elif "<" in tok:
             name_part, val = tok.split("<", 1)
             return IF_var_lt(name_part[4:], int(val))
@@ -1683,6 +1854,7 @@ def validate_geo(text: str) -> List[GeoError]:
     """Validate a .geo script and return a list of errors (empty = valid)."""
     errors: List[GeoError] = []
     valid_kw = {"NAME", "RULE", "DEFAULT", "DEFINE", "INCLUDE"}
+    continuation_kw = {"THEN", "AS"}
     valid_families = {"Y_LOOP", "X_LOOP", "Z_LOOP", "DIAG_LOOP"}
     valid_actions = {"ADVANCE", "HOLD", "GATE_ON", "GATE_OFF", "SWITCH", "SET",
                      "ROTATE_CW", "ROTATE_CCW", "FLIP_H", "FLIP_V",
@@ -1690,11 +1862,52 @@ def validate_geo(text: str) -> List[GeoError]:
     has_name = False
     defines: dict = {}   # collect aliases for trial parsing
 
-    for i, raw in enumerate(text.splitlines(), 1):
+    # Pre-process: join continuation lines (same logic as parse_geo_script)
+    lines = []
+    current_line = ""
+    line_numbers = []  # Track original line numbers for error reporting
+    
+    for line_num, raw in enumerate(text.splitlines(), 1):
         line = raw.split("#")[0].strip()
-        if not line:
+        is_empty = not line or all(c in "═─│┌┐└┘├┤┬┴┼═" for c in line)
+        
+        if is_empty:
+            if current_line:
+                lines.append(current_line)
+                line_numbers.append(current_line_start)
+            current_line = ""
             continue
+        
+        first_token = line.split()[0].upper() if line.split() else ""
+        
+        if first_token in valid_kw:
+            if current_line:
+                lines.append(current_line)
+                line_numbers.append(current_line_start)
+            current_line = line
+            current_line_start = line_num
+        elif first_token in continuation_kw:
+            if current_line:
+                current_line += " " + line
+            else:
+                current_line = line
+                current_line_start = line_num
+        else:
+            if current_line:
+                current_line += " " + line
+            else:
+                current_line = line
+                current_line_start = line_num
+    
+    if current_line:
+        lines.append(current_line)
+        line_numbers.append(current_line_start)
+
+    # Now validate the joined lines
+    for i, line in zip(line_numbers, lines):
         tokens = line.split()
+        if not tokens:
+            continue
         kw = tokens[0].upper()
 
         if kw not in valid_kw:

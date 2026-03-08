@@ -68,8 +68,9 @@ See [GEO_LANGUAGE.md](GEO_LANGUAGE.md) for the full language reference.
 
 ## Examples
 
-12 example scripts are included in the [`examples/`](examples/) folder:
+**35 example scripts** are included in the [`examples/`](examples/) folder, organized by category:
 
+### Core Grammar Demos
 | Script | Description |
 |--------|-------------|
 | [`spiral.geo`](examples/spiral.geo) | Beats through all four families on an 8-tick cycle |
@@ -81,15 +82,59 @@ See [GEO_LANGUAGE.md](GEO_LANGUAGE.md) for the full language reference.
 | [`heat_spread.geo`](examples/heat_spread.geo) | Cell variables — accumulate "heat", change family at thresholds |
 | [`signal_wave.geo`](examples/signal_wave.geo) | Inter-cell signals — EMIT/signal cascading waves |
 | [`depth_layers.geo`](examples/depth_layers.geo) | Range conditions — different behavior per depth layer |
-| [`conway_life.geo`](examples/conway_life.geo) | Conway's Game of Life approximation using quad-mask families |
+| [`conway_life.geo`](examples/conway_life.geo) | Conway's Game of Life approximation |
 | [`mask_set.geo`](examples/mask_set.geo) | mask_in conditions and multi-step ADVANCE |
-| [`composite.geo`](examples/composite.geo) | Composite actions — chain SWITCH + EMIT + SET_VAR in one rule |
+| [`composite.geo`](examples/composite.geo) | Composite actions — chain SWITCH + EMIT + SET_VAR |
+
+### Animation Scripts
+| Script | Description |
+|--------|-------------|
+| [`animation/idle_breathe.geo`](examples/animation/idle_breathe.geo) | Character breathing cycle with inhale/exhale phases |
+| [`animation/attack_swing.geo`](examples/animation/attack_swing.geo) | Melee attack with windup, strike, impact, recovery |
+| [`animation/jump_arc.geo`](examples/animation/jump_arc.geo) | Jump animation with parabolic trajectory |
+| [`animation/morph_shape.geo`](examples/animation/morph_shape.geo) | Shape morphing (circle to square) |
+| [`animation/walk_cycle.geo`](examples/animation/walk_cycle.geo) | Character walk cycle |
+
+### Terrain Generation
+| Script | Description |
+|--------|-------------|
+| [`terrain/heightmap.geo`](examples/terrain/heightmap.geo) | Multi-octave noise terrain with erosion |
+| [`terrain/biomes.geo`](examples/terrain/biomes.geo) | Biome assignment by elevation and moisture |
+| [`terrain/caves.geo`](examples/terrain/caves.geo) | Cellular automata cave generation |
+| [`terrain/rivers.geo`](examples/terrain/rivers.geo) | River network with flow accumulation |
+| [`terrain/erosion.geo`](examples/terrain/erosion.geo) | Hydraulic erosion simulation |
+
+### Self-Organization Patterns
+| Script | Description |
+|--------|-------------|
+| [`selforg/voronoi.geo`](examples/selforg/voronoi.geo) | Voronoi diagram generation |
+| [`selforg/maze.geo`](examples/selforg/maze.geo) | Maze generation via wall growth |
+| [`selforg/flow_field.geo`](examples/selforg/flow_field.geo) | Flow field visualization |
+| [`selforg/reaction_diffusion.geo`](examples/selforg/reaction_diffusion.geo) | Turing patterns (spots, stripes) |
+
+### Cosmos Simulations
+| Script | Description |
+|--------|-------------|
+| [`cosmos_sim.geo`](examples/cosmos_sim.geo) | Cosmic evolution simulation |
+| [`cosmos_sandbox.geo`](examples/cosmos_sandbox.geo) | Black hole collisions & gravitational waves |
+| [`galaxy_generator.geo`](examples/galaxy_generator.geo) | Procedural galaxy generation |
+| [`gravity_cosmos.geo`](examples/gravity_cosmos.geo) | Gravitational particle simulation |
+
+### Other Examples
+| Script | Description |
+|--------|-------------|
+| [`forest_fire.geo`](examples/forest_fire.geo) | Forest fire spread simulation |
+| [`ecosystem.geo`](examples/ecosystem.geo) | Predator-prey ecosystem |
+| [`dungeon_generator.geo`](examples/dungeon_generator.geo) | Rogue-like dungeon generation |
+| [`combat_encounters.geo`](examples/combat_encounters.geo) | Combat encounter generation |
 
 Run any example:
 
 ```bash
 python BinaryQuadTreeTest.py --geo examples/spiral.geo
 python BinaryQuadTreeTest.py --geo examples/conway_life.geo --depth 4
+python BinaryQuadTreeTest.py --geo examples/terrain/caves.geo --grid
+python BinaryQuadTreeTest.py --geo examples/selforg/voronoi.geo --grid
 ```
 
 ## All Demos
