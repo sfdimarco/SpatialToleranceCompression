@@ -4,6 +4,10 @@
 
 > A fractal grammar engine where 4-bit masks program geometry — and a binary image codec that uses the same spatial logic to beat JPEG compression.
 
+![GEO grammar engine — spiral.geo running at depth 6](media/geo_spiral.gif)
+
+![GEOI vs JPEG compression comparison](media/comparison.png)
+
 ---
 
 ## What Is This?
@@ -246,6 +250,14 @@ cd go
 ./geocoder encode -i art.png -o art.geoi -q 255  # lossless
 ./geocoder decode -i art.geoi -o art_out.png -d 6  # half-res progressive
 ```
+
+---
+
+## Progressive Decode
+
+One `.geoi` file, four resolutions — stop reading the bitstream at any depth:
+
+![Progressive decode — depth 5 through 9](media/progressive.png)
 
 ---
 
