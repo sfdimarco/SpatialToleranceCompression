@@ -1,0 +1,48 @@
+White Paper: Leveraging the .geoi Quadtree Codec to Optimize Computer Vision Models
+Executive Summary
+The rapid scaling of machine learning (ML), particularly in computer vision, is increasingly bottlenecked by the sheer volume of dense pixel data and the computational cost of processing uniform, uninformative image regions. The .geoi image compression codec introduces a novel approach to storing spatial data using a recursive quadtree structure. By abandoning traditional block-based encoding in favor of an adaptive, fractal-based grammar, .geoi offers unique geometric properties that can be directly leveraged to improve the efficiency, speed, and accuracy of neural networks.
+
+1. Understanding the .geoi Architecture
+Standard image formats like JPEG rely on processing uniform grids via 8×8 Discrete Cosine Transform (DCT) blocks. In contrast, the .geoi codec treats space as a recursive language.
++1
+
+The technical foundation of .geoi includes:
+
+
+Adaptive Spatial Subdivision: Large, uniform regions of an image collapse into single nodes.
+
+
+Detail-Driven Architecture: Only the areas of an image that contain actual detail are subdivided into smaller quadrants.
+
+
+Delta Encoding: Child nodes do not store absolute colors; instead, they store the difference (delta) from their parent's average.
+
+
+Efficient Packaging: Frequent, small deltas are compressed using Huffman coding.
+
+2. Applications for Machine Learning
+A. Native Progressive Inference for Dynamic Routing
+Modern vision models often struggle with the computational cost of processing high-resolution images. The .geoi codec features a progressive decode capability, meaning a decoder can stop reading the bitstream at any depth to output a valid, lower-resolution image.
++1
+
+ML Application: Models can be designed for "early exit" or dynamic routing. A lightweight network can evaluate the lowest-resolution pass (e.g., stopping at depth 4 for a 1/16-resolution image) to make a preliminary classification. If the model's confidence is low, it can dynamically request deeper bitstream reads to fetch higher-resolution details only where needed, drastically reducing average inference time.
+
+B. Built-in Saliency and Attention Maps
+Vision Transformers (ViTs) spend significant compute power calculating self-attention across dense pixel patches, even when those patches contain identical information (like a clear blue sky). Because .geoi ensures each quadrant knows its spatial address and only subdivides areas with detail, the data structure itself acts as a pre-computed saliency map.
++1
+
+ML Application: The depth of the quadtree can be fed directly into an ML model as an attention prior. Networks can allocate computational resources proportionally to the tree depth, focusing parameter weights on the highly subdivided nodes (complex edges/textures) and bypassing shallow nodes (uniform regions).
+
+C. Elimination of Adversarial Artifacts
+Many convolutional neural networks (CNNs) inadvertently learn to detect the invisible 8×8 DCT block boundaries inherent to JPEG compression, making them brittle to different compression levels or vulnerable to adversarial attacks.
+
+
+ML Application: The .geoi format operates entirely without 8×8 DCT blocks, meaning there are no block artifacts. Training models on artifact-free, adaptively detailed regions ensures the network learns true geometric and texture features rather than artifact patterns, potentially leading to more robust generalization in real-world environments.
+
+D. Non-Euclidean Graph Processing
+Instead of decoding .geoi back into a dense 2D grid of pixels, the underlying data structure can be utilized directly.
+
+ML Application: Graph Neural Networks (GNNs) or tree-structured recurrent networks could ingest the .geoi quadtree directly. By processing the image as a hierarchy of delta-encoded nodes  rather than a flat matrix, the input token length for images with large uniform regions (like skies or illustrations) would be orders of magnitude smaller, vastly reducing memory overhead during training.
+
+Conclusion
+The .geoi codec represents more than just a storage solution; its spatial logic provides a mathematically elegant alternative to dense pixel grids. By exposing the structural complexity of an image directly through its encoding format, .geoi offers computer vision engineers a compelling pathway to build faster, more context-aware, and computationally efficient machine learning models.
