@@ -2,11 +2,11 @@
 
 **Two experiments in the same idea: space as a recursive language.**
 
-> A fractal grammar engine where 4-bit masks program geometry — and a binary image codec that uses the same spatial logic to beat JPEG compression.
+> A fractal grammar engine where 4-bit masks program geometry — and a binary image codec that uses the same spatial logic for progressive, hierarchical image storage.
 
 ![GEO grammar engine — spiral.geo running at depth 6](media/geo_spiral.gif)
 
-![GEOI vs JPEG compression comparison](media/comparison.png)
+![Rate-distortion: .geoi vs JPEG vs PNG, quality-matched](media/rd_curves.png)
 
 ---
 
@@ -37,15 +37,23 @@ DEFAULT ADVANCE
 
 A binary image and video compression format that uses the **same quadtree spatial subdivision**
 as the grammar engine — but for image compression. Large uniform regions collapse to single
-nodes. Only areas with actual detail get subdivided. The result: **better compression than JPEG
-on images with large uniform regions** (skies, walls, illustration, pixel art).
+nodes. Only areas with actual detail get subdivided, and every node's position is its Morton
+(Z-order) address.
 
-```
-Raw 512×512:      1,048,576 bytes
-JPEG q=95:           63,482 bytes  (16.5x)
-.geoi q=248:         44,100 bytes  (23.8x) ← beats JPEG at this quality level
-.geoi q=245:         20,200 bytes  (52.0x) ← matches JPEG quality at 4x smaller
-```
+**Measured, quality-matched (PSNR + SSIM, 9 test images — full data and method in [BENCHMARK.md](BENCHMARK.md)):**
+
+| Content | `.geoi` size vs JPEG at the same quality |
+|---|---|
+| Photographs | 1.5–5.6× larger |
+| UI screenshot | 1.5–2.1× larger |
+| Line art, ~11% ink | 1.6–2.1× larger |
+| Line art, ~1% ink | about equal by PSNR, 10–23% smaller by SSIM |
+
+On flat graphic content, lossless PNG and WebP are smaller than every `.geoi` setting. The
+ratio is not where this format wins. Its real strengths are **structural**: emptiness collapses
+to almost nothing, and the Morton-ordered hierarchy gives every region an address.
+*An earlier version of this README said `.geoi` beats JPEG. That was written before quality
+metrics existed, and it did not hold up once they did.*
 
 ---
 
@@ -64,9 +72,9 @@ Bit-interleave (x=2, y=1):  x=10b, y=01b → Morton code 0110b = 6
 ```
 
 This spatial locality means:
-- **Progressive decode**: stop reading the bitstream at any depth → valid lower-resolution image
+- **Progressive decode**: the tree yields a valid lower-resolution image at any depth *(the v2 bitstream order doesn't support this yet — see below)*
 - **Adaptive detail**: each region gets exactly as many bits as it needs
-- **No block artifacts**: no 8×8 DCT blocks — regions are as large or small as the image demands
+- **No fixed 8×8 blocks**: regions are as large or small as the image demands (at low quality, variable-size blocks still show)
 
 ---
 
@@ -130,7 +138,7 @@ Each family is a closed cycle. `ADVANCE` steps forward one position.
 | **GATE** | `0000` / `1111` | Fixed / frozen |
 
 **Layer 2 — Grammar Programs**: Ordered `IF condition THEN action` rules. First match wins.
-Conditions compose with `AND`, `OR`, `BUT`, `NOT`. Turing-complete — branch on state, time,
+Conditions compose with `AND`, `OR`, `BUT`, `NOT`. Rules branch on state, time,
 depth, neighbor context, probability, cell variables.
 
 **Layer 3 — Grid / CA**: An N×M grid of quadtree roots, each with its own program. Cells read
@@ -153,7 +161,7 @@ PNG/JPEG input
 [EncodeHuffman]   Pass 1: collect delta distribution. Build per-channel Huffman tables.
      ↓             Pass 2: write header + root color + 4 Huffman tables + coded bitstream
      ↓
-[.geoi file]      ~3-50x smaller than raw pixels, competitive with JPEG
+[.geoi file]      ~3-50x smaller than raw pixels (larger than JPEG at equal quality)
 ```
 
 **Why YCbCr?** Separates luminance (Y) from chrominance (Cb, Cr). Human eyes are 4× less
@@ -164,8 +172,11 @@ JPEG uses, applied to spatial quadtree deltas instead of DCT coefficients.
 absolute colors. Deltas cluster near zero. Huffman codes frequent small deltas with 1-2 bits,
 rare large deltas with longer codes. On typical images: v2 Huffman is 3× smaller than v1 raw.
 
-**Progressive decode**: `Decode(reader, maxDepth=4)` stops at depth 4 → a valid 1/16-resolution
-image. Same file. Same decoder. Just stop reading earlier.
+**Progressive decode**: the goal is that `Decode(reader, maxDepth=4)` stops at depth 4 and returns a
+valid 1/16-resolution image. **Not working yet for v2 streams:** nodes are written depth-first, so
+stopping early desynchronises the reader (measured: 12.5 dB, vs 21.5 dB for the same tree cut
+in memory). Fix: write the bitstream level by level (breadth-first), or store subtree byte
+lengths so the reader can skip.
 
 ---
 
@@ -247,7 +258,7 @@ python BinaryQuadTreeTest.py --geo examples/cosmos_sim.geo
 # Codec examples
 cd go
 ./geocoder bench -i my_photo.png -q 245        # full comparison table vs JPEG
-./geocoder encode -i art.png -o art.geoi -q 255  # lossless
+./geocoder encode -i art.png -o art.geoi -q 255  # near-lossless (not bit-exact yet)
 ./geocoder decode -i art.geoi -o art_out.png -d 6  # half-res progressive
 ```
 
@@ -255,7 +266,7 @@ cd go
 
 ## Progressive Decode
 
-One `.geoi` file, four resolutions — stop reading the bitstream at any depth:
+One quadtree, four resolutions — the tree cut at each depth *(rendered from the in-memory tree; see the bitstream note above)*:
 
 ![Progressive decode — depth 5 through 9](media/progressive.png)
 
@@ -273,8 +284,10 @@ One `.geoi` file, four resolutions — stop reading the bitstream at any depth:
 | Codec v1 (raw) | ✅ Complete | Fixed 5 bytes/node, baseline |
 | Codec v2 (Huffman) | ✅ Complete | Per-channel Huffman, 2-4× over v1 |
 | CLI geocoder tool | ✅ Complete | encode/decode/info/bench commands |
-| Progressive decode | ✅ Complete | Stop at any depth → valid image |
-| PSNR/SSIM quality metrics | 🔜 Phase 4 | Perceptual quality vs JPEG |
+| Decoder roundtrip | ✅ Fixed | Morton-code bug fixed; pixel-level regression test added |
+| PSNR/SSIM quality metrics | ✅ Complete | `benchmarks/` — see BENCHMARK.md |
+| Progressive decode | ⚠ Tree only | Bitstream needs breadth-first order |
+| Bit-exact lossless (q=255) | ❌ Not yet | ~50–53 dB on photos, ~31 dB on pixel art |
 | Streaming HTTP decoder | 🔜 Phase 3 | Range requests → progressive web |
 | Video codec (.geov) | 🔜 Future | Inter-frame delta on quadtrees |
 
@@ -288,7 +301,7 @@ One `.geoi` file, four resolutions — stop reading the bitstream at any depth:
 
 ## The STCP Hypothesis
 
-> **GEO compression and Barnes-Hut N-body gravity are the same algorithm.**
+> **Hypothesis: GEO compression and Barnes-Hut N-body gravity share the same computational structure.**
 
 The **Spatial Tolerance Compression Principle (STCP)** is the observation that these two systems — a fractal image codec and a galaxy simulator — share an identical computational structure:
 
@@ -316,3 +329,19 @@ Interactive demos archived in [`research-/simulations`](https://github.com/sfdim
 - **[Universe3-Cache](https://github.com/sfdimarco/research-/blob/master/simulations/Universe3-Cache.html)** — Cache hit rate visualizer; validates the ~45% figure live
 
 > Download and open any `.html` file — no server needed. Press **Q** to toggle QJL on/off, **R** to reset stats.
+
+---
+
+## Open Hypothesis — GEO as input structure for AI vision models
+
+*Untested. Stated as a direction, not a result.*
+
+Vision models read an image as a flat grid of patches, and every patch costs the same whether it
+holds detail or empty space. A `.geoi` tree already knows which regions are empty and which carry
+detail, and orders them by Morton address. The hypothesis: giving a model the quadtree hierarchy
+(coarse to fine, detail only where it exists) could let it spend attention and tokens where the
+image actually changes.
+
+Testing it needs the progressive-bitstream fix above, a model that accepts variable-size regions,
+and compute to compare task accuracy and token cost against standard patching. I don't currently
+have that infrastructure. Collaboration welcome.

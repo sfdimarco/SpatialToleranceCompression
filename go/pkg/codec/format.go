@@ -81,13 +81,29 @@ func Decode(r io.Reader, maxDecodeDepth uint8) (*quadtree.QuadNode, Header, erro
 	case VersionRaw:
 		root, err := decodeNodeV1(r, nil, 0, maxDecodeDepth, true)
 		if err != nil { return nil, h, fmt.Errorf("decode v1: %w", err) }
+		assignMortonCodes(root)
 		return root, h, nil
 	case VersionHuffman:
 		root, err := decodeV2(r, maxDecodeDepth)
 		if err != nil { return nil, h, fmt.Errorf("decode v2: %w", err) }
+		assignMortonCodes(root)
 		return root, h, nil
 	default:
 		return nil, h, fmt.Errorf("unsupported version %d", h.Version)
+	}
+}
+
+// assignMortonCodes sets every node's Morton code top-down after decoding.
+// Fix: the recursive decoders assigned child.Code only AFTER the child's
+// subtree was decoded, so every grandchild inherited parent code 0 and
+// three of the four quadrants rendered as empty.
+func assignMortonCodes(n *quadtree.QuadNode) {
+	if n == nil { return }
+	for i := uint8(0); i < 4; i++ {
+		if c := n.Children[i]; c != nil {
+			c.Code = (n.Code << 2) | uint64(i)
+			assignMortonCodes(c)
+		}
 	}
 }
 
