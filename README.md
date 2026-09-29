@@ -314,9 +314,12 @@ The **Spatial Tolerance Compression Principle (STCP)** is the observation that t
 
 Both systems ask the same question at every quadtree node: *"Is this region uniform enough to treat as a single thing?"* The answer — and the threshold — is structurally identical.
 
-### QJL — Second-Order STCP
+### QFC — Second-Order STCP
 
-**QJL (Quantized Joint Leverage)** extends Barnes-Hut by quantizing the spherical coordinates (θ, φ) of accepted force interactions, enabling force vector **caching across frames**. Particles in similar positions relative to a cluster reuse previously computed force angles rather than recomputing them.
+> **Naming note:** earlier versions called this technique *QJL*. It was renamed **Quantized Force Caching (QFC)** to avoid confusion with Quantized Johnson–Lindenstrauss, an unrelated method in machine-learning research.
+
+
+**Quantized Force Caching (QFC)** extends Barnes-Hut by quantizing the spherical coordinates (θ, φ) of accepted force interactions, enabling force vector **caching across frames**. Particles in similar positions relative to a cluster reuse previously computed force angles rather than recomputing them.
 
 Validated result: **~45% cache hit rate** on 8,000-particle N-body simulations.
 
@@ -324,11 +327,11 @@ Validated result: **~45% cache hit rate** on 8,000-particle N-body simulations.
 
 Interactive demos archived in [`research-/simulations`](https://github.com/sfdimarco/research-/tree/master/simulations):
 
-- **[Universe1-Basic](https://github.com/sfdimarco/research-/blob/master/simulations/Universe1-Basic.html)** — Barnes-Hut N-body baseline (STCP without QJL)
-- **[Universe2-Benchmark](https://github.com/sfdimarco/research-/blob/master/simulations/Universe2-Benchmark.html)** — QJL vs exact force benchmark with live timing HUD and KE drift tracking
+- **[Universe1-Basic](https://github.com/sfdimarco/research-/blob/master/simulations/Universe1-Basic.html)** — Barnes-Hut N-body baseline (STCP without QFC)
+- **[Universe2-Benchmark](https://github.com/sfdimarco/research-/blob/master/simulations/Universe2-Benchmark.html)** — QFC vs exact force benchmark with live timing HUD and KE drift tracking
 - **[Universe3-Cache](https://github.com/sfdimarco/research-/blob/master/simulations/Universe3-Cache.html)** — Cache hit rate visualizer; validates the ~45% figure live
 
-> Download and open any `.html` file — no server needed. Press **Q** to toggle QJL on/off, **R** to reset stats.
+> Download and open any `.html` file — no server needed. Press **Q** to toggle QFC on/off, **R** to reset stats.
 
 ---
 
