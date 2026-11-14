@@ -1,0 +1,250 @@
+# BinaryQuadTreeCPUTest Source Package
+"""
+Binary Quad-Tree Grammar Engine - A spatial grammar simulation system.
+
+This package provides:
+- BinaryQuadTree: Core quadtree engine for spatial simulations
+- GeoParser: Parser for .geo script files
+- Grid: N×M grid system for cellular automata
+- Program/Rule: Grammar rule system for state transitions
+"""
+
+from .binary_quad_tree import (
+    # Core classes
+    Node,
+    Grid,
+    Program,
+    Rule,
+    
+    # Condition builders
+    Cond,
+    IF_family,
+    IF_mask,
+    IF_mask_in,
+    IF_tick_gte,
+    IF_tick_lt,
+    IF_tick_eq,
+    IF_tick_mod,
+    IF_tick_between,
+    IF_depth_gte,
+    IF_depth_lt,
+    IF_depth_eq,
+    IF_depth_between,
+    IF_depth_mod,
+    IF_var_gte,
+    IF_var_lt,
+    IF_var_eq,
+    IF_var_lte,
+    IF_var_between,
+    IF_neighbor_mask,
+    IF_neighbor_family,
+    IF_neighbor_prog,
+    IF_any_neighbor,
+    IF_any_neighbor_prog,
+    IF_neighbor_count,
+    IF_neighbor_count_gte,
+    IF_neighbor_count_lte,
+    IF_neighbor_count8,
+    IF_neighbor_count8_gte,
+    IF_neighbor_count8_lte,
+    IF_neighbor_mask_count,
+    IF_neighbor_mask_count8,
+    IF_signal,
+    IF_random_lt,
+    IF_random_gte,
+    IF_nb_var_gte,
+    IF_nb_var_lt,
+    IF_nb_var_eq,
+    IF_nb_var_lte,
+    IF_own_prog,
+    IF_neighbor_prog_count,
+    IF_neighbor_prog_gte,
+    IF_active_count,
+    IF_active_gte,
+    IF_active_lte,
+    
+    # Action builders
+    Action,
+    Advance,
+    Hold,
+    GateOn,
+    GateOff,
+    SwitchFamily,
+    SetMask,
+    SwitchProgram,
+    SwitchToPluralityNeighbor,
+    CallProgram,
+    RotateCW,
+    RotateCCW,
+    FlipH,
+    FlipV,
+    SetVar,
+    IncrVar,
+    Emit,
+    AccumVar,
+    ClampVar,
+    CompositeAction,
+    AdvanceN,
+    
+    # Loop family constants
+    GATES,
+    Y_LOOP,
+    X_LOOP,
+    Z_LOOP,
+    DIAG_LOOP,
+    
+    # Utility functions
+    next_mask,
+    mask_quadrants,
+    family_of,
+    expand_active,
+    tick_masks,
+    draw_frame,
+    draw_grid_frame,
+    
+    # GEO parser functions
+    parse_geo_script,
+    load_geo,
+    validate_geo,
+    
+    # Demo runners
+    run_script_demo,
+    run_script_grid_demo,
+    
+    # Color palette
+    _FAMILY_RGB,
+    
+    # Program registry
+    PROGRAM_REGISTRY,
+    
+    # Geo constants
+    GEO_SPIRAL,
+    GEO_PULSE_DEPTH,
+    GEO_NB_SCRIPT,
+    GEO_VOTE_EXAMPLE,
+    GEO_ROTATE_MIRROR,
+    GEO_STOCHASTIC,
+    GEO_HEAT_SPREAD,
+    GEO_SIGNAL_WAVE,
+    GEO_DEPTH_LAYERS,
+    GEO_CONWAY_LIFE,
+    GEO_MASK_SET,
+    GEO_COMPOSITE,
+)
+
+__version__ = "1.0.0"
+__all__ = [
+    # Classes
+    "Node",
+    "Grid", 
+    "Program",
+    "Rule",
+    "Cond",
+    "Action",
+    
+    # Condition builders
+    "IF_family",
+    "IF_mask",
+    "IF_mask_in",
+    "IF_tick_gte",
+    "IF_tick_lt",
+    "IF_tick_eq",
+    "IF_tick_mod",
+    "IF_tick_between",
+    "IF_depth_gte",
+    "IF_depth_lt",
+    "IF_depth_eq",
+    "IF_depth_between",
+    "IF_depth_mod",
+    "IF_var_gte",
+    "IF_var_lt",
+    "IF_var_eq",
+    "IF_var_lte",
+    "IF_var_between",
+    "IF_neighbor_mask",
+    "IF_neighbor_family",
+    "IF_neighbor_prog",
+    "IF_any_neighbor",
+    "IF_any_neighbor_prog",
+    "IF_neighbor_count",
+    "IF_neighbor_count_gte",
+    "IF_neighbor_count_lte",
+    "IF_neighbor_count8",
+    "IF_neighbor_count8_gte",
+    "IF_neighbor_count8_lte",
+    "IF_neighbor_mask_count",
+    "IF_neighbor_mask_count8",
+    "IF_signal",
+    "IF_random_lt",
+    "IF_random_gte",
+    "IF_nb_var_gte",
+    "IF_nb_var_lt",
+    "IF_nb_var_eq",
+    "IF_nb_var_lte",
+    "IF_own_prog",
+    "IF_neighbor_prog_count",
+    "IF_neighbor_prog_gte",
+    "IF_active_count",
+    "IF_active_gte",
+    "IF_active_lte",
+    
+    # Action builders
+    "Advance",
+    "Hold",
+    "GateOn",
+    "GateOff",
+    "SwitchFamily",
+    "SetMask",
+    "SwitchProgram",
+    "SwitchToPluralityNeighbor",
+    "CallProgram",
+    "RotateCW",
+    "RotateCCW",
+    "FlipH",
+    "FlipV",
+    "SetVar",
+    "IncrVar",
+    "Emit",
+    "AccumVar",
+    "ClampVar",
+    "CompositeAction",
+    "AdvanceN",
+    
+    # Constants
+    "GATES",
+    "Y_LOOP",
+    "X_LOOP",
+    "Z_LOOP",
+    "DIAG_LOOP",
+    
+    # Functions
+    "next_mask",
+    "mask_quadrants",
+    "family_of",
+    "expand_active",
+    "tick_masks",
+    "draw_frame",
+    "draw_grid_frame",
+    "parse_geo_script",
+    "load_geo",
+    "validate_geo",
+    "run_script_demo",
+    "run_script_grid_demo",
+    
+    # Geo constants
+    "GEO_SPIRAL",
+    "GEO_PULSE_DEPTH",
+    "GEO_NB_SCRIPT",
+    "GEO_VOTE_EXAMPLE",
+    "GEO_ROTATE_MIRROR",
+    "GEO_STOCHASTIC",
+    "GEO_HEAT_SPREAD",
+    "GEO_SIGNAL_WAVE",
+    "GEO_DEPTH_LAYERS",
+    "GEO_CONWAY_LIFE",
+    "GEO_MASK_SET",
+    "GEO_COMPOSITE",
+    
+    # Registry
+    "PROGRAM_REGISTRY",
+]

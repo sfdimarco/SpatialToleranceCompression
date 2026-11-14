@@ -28,8 +28,8 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Dict
 
-# Import from main module
-from BinaryQuadTreeTest import (
+# Import from local module
+from .binary_quad_tree import (
     parse_geo_script, load_geo, validate_geo,
     Node, expand_active, draw_frame, mask_quadrants,
     GATES, Y_LOOP, X_LOOP, Z_LOOP, DIAG_LOOP,
@@ -663,7 +663,7 @@ Examples:
 
     # Single geo file mode (no GUI)
     if args.geo and args.no_gui:
-        from BinaryQuadTreeTest import run_script_demo, run_script_grid_demo
+        from .binary_quad_tree import run_script_demo, run_script_grid_demo
         with open(args.geo, 'r') as f:
             script = f.read()
         

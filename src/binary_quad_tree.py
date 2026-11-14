@@ -584,6 +584,45 @@ def IF_var_between(name: str, lo: int, hi: int) -> Cond:
         def __repr__(self): return f"var_{name}_in({lo}..{hi})"
     return _C()
 
+# ── Neighbor variable conditions ──────────────────────────────────────────────
+
+def IF_nb_var_gte(direction: str, name: str, value: int) -> Cond:
+    """True when neighbor's variable `name` >= value."""
+    key = f"nb_vars_{direction}"
+    class _C(Cond):
+        def _test(self, node, tick, ctx):
+            return ctx.get(key, {}).get(name, 0) >= value
+        def __repr__(self): return f"nb_var_{direction}_{name}>={value}"
+    return _C()
+
+def IF_nb_var_lt(direction: str, name: str, value: int) -> Cond:
+    """True when neighbor's variable `name` < value."""
+    key = f"nb_vars_{direction}"
+    class _C(Cond):
+        def _test(self, node, tick, ctx):
+            return ctx.get(key, {}).get(name, 0) < value
+        def __repr__(self): return f"nb_var_{direction}_{name}<{value}"
+    return _C()
+
+def IF_nb_var_eq(direction: str, name: str, value: int) -> Cond:
+    """True when neighbor's variable `name` == value."""
+    key = f"nb_vars_{direction}"
+    class _C(Cond):
+        def _test(self, node, tick, ctx):
+            return ctx.get(key, {}).get(name, 0) == value
+        def __repr__(self): return f"nb_var_{direction}_{name}=={value}"
+    return _C()
+
+def IF_nb_var_lte(direction: str, name: str, value: int) -> Cond:
+    """True when neighbor's variable `name` <= value."""
+    key = f"nb_vars_{direction}"
+    class _C(Cond):
+        def _test(self, node, tick, ctx):
+            return ctx.get(key, {}).get(name, 0) <= value
+        def __repr__(self): return f"nb_var_{direction}_{name}<={value}"
+    return _C()
+
+
 def IF_random_gte(prob: float) -> Cond:
     """True with probability (1.0 - prob) each evaluation."""
     import random as _rand
@@ -750,6 +789,39 @@ class Emit(Action):
     def apply(self, node, ctx):
         ctx["pending_signals"].add(self._signal)
     def label(self): return f"EMIT({self._signal})"
+
+class AccumVar(Action):
+    """Read a neighbor's variable and accumulate it into a local variable.
+
+    ACCUM_VAR target direction source [weight]
+    e.g. ACCUM_VAR sum S activation 3  →  my.sum += south.activation * 3
+    """
+    def __init__(self, target: str, direction: str, source: str, weight: int = 1):
+        self._target = target
+        self._dir = direction
+        self._source = source
+        self._weight = weight
+    def apply(self, node, ctx):
+        nb_vars = ctx.get(f"nb_vars_{self._dir}", {})
+        val = nb_vars.get(self._source, 0)
+        ctx["vars"][self._target] = ctx["vars"].get(self._target, 0) + val * self._weight
+    def label(self): return f"ACCUM({self._target},{self._dir},{self._source},w={self._weight})"
+
+class ClampVar(Action):
+    """Clamp a cell variable to [lo, hi] range. Acts as ReLU (lo=0) or saturation.
+
+    CLAMP_VAR name lo hi
+    e.g. CLAMP_VAR act 0 100
+    """
+    def __init__(self, name: str, lo: int, hi: int):
+        self._name = name
+        self._lo = lo
+        self._hi = hi
+    def apply(self, node, ctx):
+        v = ctx["vars"].get(self._name, 0)
+        ctx["vars"][self._name] = max(self._lo, min(self._hi, v))
+    def label(self): return f"CLAMP({self._name},{self._lo},{self._hi})"
+
 
 class CompositeAction(Action):
     """Execute multiple actions in sequence."""
@@ -1039,6 +1111,11 @@ class Grid:
                     "nb_node_E": self.cells[r][c + 1] if c + 1 < self.cols else None,
                     "nb_node_W": self.cells[r][c - 1] if c > 0             else None,
                     "signals":   received,
+                    # Neighbor variable snapshots (for neural / accumulation reads)
+                    "nb_vars_N": snap_vars[r + 1][c] if r + 1 < self.rows else {},
+                    "nb_vars_S": snap_vars[r - 1][c] if r > 0             else {},
+                    "nb_vars_E": snap_vars[r][c + 1] if c + 1 < self.cols else {},
+                    "nb_vars_W": snap_vars[r][c - 1] if c > 0             else {},
                     # Mutable containers shared down the tree:
                     "vars":            {k: v for k, v in snap_vars[r][c].items()
                                         if not k.startswith("_")},
@@ -1759,6 +1836,27 @@ def _parse_atom(tokens: List[str]) -> Cond:
     if lo.startswith("signal="):
         return IF_signal(tok.split("=", 1)[1])
 
+    # Neighbor variable conditions: nb_var_N_heat>=3, nb_var_S_act<10, etc.
+    # Format: nb_var_DIR_VARNAME{>=,<=,<,=}VALUE
+    if lo.startswith("nb_var_") and any(op in tok for op in (">=", "<=", "<", "=")):
+        # Extract direction (single char after nb_var_)
+        rest = tok[7:]  # after "nb_var_"
+        direction = rest[0].upper()
+        if direction in ("N", "S", "E", "W"):
+            varpart = rest[2:]  # skip "N_" etc.
+            if ">=" in varpart:
+                name_part, val = varpart.split(">=", 1)
+                return IF_nb_var_gte(direction, name_part, int(val))
+            elif "<=" in varpart:
+                name_part, val = varpart.split("<=", 1)
+                return IF_nb_var_lte(direction, name_part, int(val))
+            elif "<" in varpart:
+                name_part, val = varpart.split("<", 1)
+                return IF_nb_var_lt(direction, name_part, int(val))
+            else:
+                name_part, val = varpart.split("=", 1)
+                return IF_nb_var_eq(direction, name_part, int(val))
+
     # Cell variable conditions: var_heat>=3, var_heat<=5, var_heat=0, var_heat<5, var_heat_in=2..4
     if lo.startswith("var_") and ("_in=" in tok or ">=" in tok or "<=" in tok or "<" in tok or "=" in tok):
         if "_in=" in tok:
@@ -1838,6 +1936,16 @@ def _parse_single_action(tokens: List[str]) -> Action:
     if kw == "PLURALITY":
         n = int(tokens[1]) if len(tokens) > 1 else 2
         return SwitchToPluralityNeighbor(n)
+    if kw == "ACCUM_VAR":
+        # ACCUM_VAR target direction source [weight]
+        target = tokens[1]
+        direction = tokens[2].upper()
+        source = tokens[3]
+        weight = int(tokens[4]) if len(tokens) > 4 else 1
+        return AccumVar(target, direction, source, weight)
+    if kw == "CLAMP_VAR":
+        # CLAMP_VAR name lo hi
+        return ClampVar(tokens[1], int(tokens[2]), int(tokens[3]))
     raise SyntaxError(f"Unknown action: {kw!r}")
 
 
@@ -1858,7 +1966,8 @@ def validate_geo(text: str) -> List[GeoError]:
     valid_families = {"Y_LOOP", "X_LOOP", "Z_LOOP", "DIAG_LOOP"}
     valid_actions = {"ADVANCE", "HOLD", "GATE_ON", "GATE_OFF", "SWITCH", "SET",
                      "ROTATE_CW", "ROTATE_CCW", "FLIP_H", "FLIP_V",
-                     "SET_VAR", "INCR_VAR", "EMIT", "CALL", "PROG", "PLURALITY"}
+                     "SET_VAR", "INCR_VAR", "EMIT", "CALL", "PROG", "PLURALITY",
+                     "ACCUM_VAR", "CLAMP_VAR"}
     has_name = False
     defines: dict = {}   # collect aliases for trial parsing
 

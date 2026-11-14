@@ -43,8 +43,8 @@ except ImportError:
     print("Error: matplotlib required. Install with: pip install matplotlib")
     sys.exit(1)
 
-# Import from BinaryQuadTreeTest
-from BinaryQuadTreeTest import (
+# Import from src package
+from src import (
     parse_geo_script, load_geo, validate_geo, family_of, next_mask,
     Node, expand_active, draw_frame, mask_quadrants,
     GATES, Y_LOOP, X_LOOP, Z_LOOP, DIAG_LOOP,

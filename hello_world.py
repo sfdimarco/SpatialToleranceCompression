@@ -6,7 +6,7 @@ Run: python hello_world.py
      python hello_world.py --export  # Export frames to exports/hello_world/
 """
 
-from BinaryQuadTreeTest import (
+from src import (
     parse_geo_script, Grid, draw_grid_frame
 )
 import matplotlib.pyplot as plt
@@ -53,9 +53,9 @@ def init_text_cell(r, c):
 
 def main():
     export_mode = "--export" in sys.argv
-    
+
     # Load the hello_world.geo program
-    prog = parse_geo_script(open("examples/hello_world.geo").read())
+    prog = parse_geo_script(open("examples/basics/hello_world.geo").read())
     
     # Create grid with HI pattern
     cell_size = 16.0

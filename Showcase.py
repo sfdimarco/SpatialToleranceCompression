@@ -31,8 +31,8 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Tuple, Any
 from datetime import datetime
 
-# Import from main module
-from BinaryQuadTreeTest import (
+# Import from src package
+from src import (
     parse_geo_script, load_geo, validate_geo,
     Node, expand_active, draw_frame, mask_quadrants,
     GATES, Y_LOOP, X_LOOP, Z_LOOP, DIAG_LOOP,
@@ -234,7 +234,7 @@ TERRAIN_DEMOS = [
         export_types=["gif", "png", "json"],
     ),
     DemoInfo(
-        geo_file="examples/dungeon_generator.geo",
+        geo_file="examples/generative/dungeon_generator.geo",
         title="Dungeon Generator",
         description="6-phase procedural level generation with rooms and corridors.",
         category="terrain",
@@ -1149,7 +1149,7 @@ Examples:
                 break
         
         if demo:
-            from BinaryQuadTreeTest import run_script_demo, run_script_grid_demo
+            from src import run_script_demo, run_script_grid_demo
             with open(demo.geo_file, 'r') as f:
                 script = f.read()
             
