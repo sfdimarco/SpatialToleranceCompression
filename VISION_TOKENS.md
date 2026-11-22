@@ -117,9 +117,35 @@ Three checks changed nothing:
 - **At 64 tokens a plain coarse grid keeps the most (49.7%).** A model never trained on mixed-size tokens prefers a uniformly
   coarser image. Published work closes this gap with a short fine-tune.
 
+## Fine-tune: one epoch on mixed-size tokens
+
+![Before and after one epoch](media/vision_tokens_finetune_accuracy.png)
+
+**Setup.**
+- **Data:** ImageNet-R split per class: 20,912 images for training, 9,088 held out, 3,000 of those scored.
+- **Training:** the same public ViT-B/16, one pass with a random token budget per batch (64–256, shrink rule).
+  AdamW, learning rate 1e-5, batch 32, about 8 minutes on a free Kaggle T4.
+- **Check:** the full-grid check passed again.
+- **Files:** notebook `benchmarks/vision_tokens/geo_tokens_finetune.ipynb`; numbers in `finetune_results.json`.
+  The standard error is about ±0.9 points.
+
+| tokens | 64 | 100 | 130 | 160 | 256 (full) | plain grid, 64 (32px) |
+|---|---|---|---|---|---|---|
+| before | 46.1 | 53.4 | 56.5 | 57.8 | 59.2 | 48.4 |
+| after | 70.9 | 76.8 | 80.2 | 81.4 | 82.8 | 71.4 |
+
+- **The low-budget gap closes.** At 64 tokens the mosaic trailed the coarse grid by 2.2 points before training and
+  by 0.5 after, which is within noise.
+- **The mosaic keeps more of the full score after training:** 98% at 160 tokens, 97% at 130, 86% at 64 (78% before).
+- **A mosaic can meet any budget; a grid cannot.** A grid comes only in 16, 64 or 256 tokens. At 130–160 tokens the
+  mosaic keeps 97–98% of full accuracy with 40–50% fewer tokens.
+- **Most of the overall rise (59% → 83%) is the model learning ImageNet-R's style,** not the tokens: the full grid
+  rose by the same amount. The fair comparison is mosaic against grid on the same trained model.
+- **Not shown:** a mosaic outscoring a coarse grid at the same token count. At 64 they tie.
+
 ## What this does not show
 
-- **No fine-tuned accuracy and no cel-frame accuracy.** The accuracy pilot is zero-shot on ImageNet-R; the cel-frame results are PSNR, a proxy. Quadformer's trained models were never released, so
+- **No cel-frame accuracy.** The accuracy results are on ImageNet-R (one zero-shot pilot, one single-epoch fine-tune); the cel-frame results are PSNR, a proxy. Quadformer's trained models were never released, so
   the next step is a zero-shot pilot: a standard public ViT-B/16 fed GEO, pixel-blur, entropy and random tokens at
   equal token budgets, scored on ImageNet-R.
 - **One episode, 8 frames, no photographs** in the resolution test.

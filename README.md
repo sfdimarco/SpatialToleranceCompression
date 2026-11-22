@@ -294,7 +294,7 @@ One quadtree, four resolutions — the tree cut at each depth *(rendered from th
 | Bit-exact lossless (q=255) | ❌ Not yet | ~50–53 dB on photos, ~31 dB on pixel art |
 | Streaming HTTP decoder | 🔜 Phase 3 | Range requests → progressive web |
 | Video codec (.geov) | 🔜 Future | Inter-frame delta on quadtrees |
-| Vision-model tokens | ⚠ Pilot | Token cost measured; zero-shot accuracy pilot done; no fine-tune yet — see VISION_TOKENS.md |
+| Vision-model tokens | ⚠ Pilot | Token cost, zero-shot pilot and one-epoch fine-tune measured on ImageNet-R; no cel-frame accuracy — see VISION_TOKENS.md |
 
 ---
 
@@ -342,7 +342,7 @@ Interactive demos archived in [`research-/simulations`](https://github.com/sfdim
 
 ## Hypothesis — GEO as input structure for AI vision models
 
-*Partly measured (2026-11-22): token cost, plus a zero-shot accuracy pilot. Full data and method in [VISION_TOKENS.md](VISION_TOKENS.md).*
+*Partly measured (2026-11-22): token cost, a zero-shot accuracy pilot, and a one-epoch fine-tune. Full data and method in [VISION_TOKENS.md](VISION_TOKENS.md).*
 
 Vision models read an image as a flat grid of patches, and every patch costs the same whether it holds detail or
 empty space. A `.geoi` tree already knows which regions are empty and which carry detail. The hypothesis: giving a
@@ -388,9 +388,13 @@ top-1 against 61.3% for the full 256, i.e. 37% fewer tokens at no measurable los
 least accuracy of the content-aware rules, and at 64 tokens a plain coarse grid kept more than any mosaic. Details in
 [VISION_TOKENS.md](VISION_TOKENS.md).
 
+**After one epoch of training on mixed-size tokens** (about 8 minutes on a free GPU), the low-budget gap closes:
+at 64 tokens the mosaic and a plain coarse grid tie (70.9% against 71.4%), and at 130–160 tokens the mosaic keeps
+97–98% of full accuracy with 40–50% fewer tokens, a budget a fixed grid cannot hit.
+
 **Still open:**
-- a short fine-tune with mixed-size tokens, which published work says closes the low-budget gap;
 - accuracy on cel-animation frames (no labelled set yet);
-- anything above 1024px.
+- anything above 1024px;
+- whether a mosaic can outscore a grid at the same token count (so far they tie).
 
 Collaboration welcome.
