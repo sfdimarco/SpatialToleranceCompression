@@ -129,13 +129,17 @@ Three stacked layers:
 **Layer 1 — Mask Engine**: 16 possible 4-bit mask values, partitioned into five loop families.
 Each family is a closed cycle. `ADVANCE` steps forward one position.
 
-| Family | Cycle | Feel |
-|--------|-------|------|
-| **Y_LOOP** | `1000→0100→0010→0001` | Single quadrant orbits |
-| **X_LOOP** | `1100→0101→0011→1010` | Adjacent pair cycles |
-| **Z_LOOP** | `0111→1011→1101→1110` | Three-quadrant sweep |
-| **DIAG_LOOP** | `1001↔0110` | Diagonal pair toggles |
-| **GATE** | `0000` / `1111` | Fixed / frozen |
+The same mask makes a different shape depending on the quadrant order. The Python runtime draws in
+**C order** (TL, TR, BR, BL: a backwards C, the clockwise ring). The Go port and the quadrant reference read
+in **Z order** (TL, TR, BL, BR). Both are on purpose; they serve different shapes.
+
+| Family | Cycle | Drawn in C order (Python) | Read in Z order |
+|--------|-------|---------------------------|-----------------|
+| **Y_LOOP** | `1000→0100→0010→0001` | One quadrant walks the C ring | One quadrant walks the Z |
+| **X_LOOP** | `1100→0101→0011→1010` | Top, diagonal, bottom, diagonal | Top, right, bottom, left pair |
+| **Z_LOOP** | `0111→1011→1101→1110` | The gap walks the C ring | The gap walks the Z |
+| **DIAG_LOOP** | `1001↔0110` | Left column ↔ right column | Diagonal ↔ diagonal |
+| **GATE** | `0000` / `1111` | Fixed / frozen | Fixed / frozen |
 
 **Layer 2 — Grammar Programs**: Ordered `IF condition THEN action` rules. First match wins.
 Conditions compose with `AND`, `OR`, `BUT`, `NOT`. Rules branch on state, time,

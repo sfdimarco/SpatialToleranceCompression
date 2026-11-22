@@ -7,12 +7,18 @@
 # Bit layout  (matches original notes):
 #   bit 3 (8) = TL   bit 2 (4) = TR   bit 1 (2) = BR   bit 0 (1) = BL
 #
-# Loop families:
-#   Gates      : 0000, 1111          — hold steady
-#   Y-loop     : 1000→0100→0010→0001 — single quadrant rotates
-#   X-loop     : 1100→0101→0011→1010 — adjacent pair cycles
-#   Z-loop     : 0111→1011→1101→1110 — three-quadrant sweep
-#   Diag-loop  : 1001↔0110           — diagonal pair toggles
+# Two orders, two shapes (both on purpose):
+#   C order  TL,TR,BR,BL  — a backwards C, the clockwise ring.  THIS FILE draws masks this way.
+#   Z order  TL,TR,BL,BR  — a Z.  The Go port and docs/Binary_Quadrant_Reference.md read masks this way.
+# The same mask number makes a different shape in each order, so every family
+# below says what it draws in both.
+#
+# Loop families:                          drawn here (C order)               read in Z order
+#   Gates      : 0000, 1111          — hold steady                      | hold steady
+#   Y-loop     : 1000→0100→0010→0001 — one quadrant walks the C ring    | one quadrant walks the Z
+#   X-loop     : 1100→0101→0011→1010 — top, diag, bottom, diag          | top, right, bottom, left pair
+#   Z-loop     : 0111→1011→1101→1110 — the gap walks the C ring         | the gap walks the Z
+#   Diag-loop  : 1001↔0110           — left column ↔ right column       | diagonal ↔ diagonal
 
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -29,9 +35,9 @@ TL, TR, BR, BL = 8, 4, 2, 1
 # ── Loop-family definitions ───────────────────────────────────────────────────
 GATES     = {0b0000, 0b1111}
 Y_LOOP    = [0b1000, 0b0100, 0b0010, 0b0001]
-X_LOOP    = [0b1100, 0b0101, 0b0011, 0b1010]
+X_LOOP    = [0b1100, 0b0101, 0b0011, 0b1010]   # C: top,diag,bottom,diag   Z: top,right,bottom,left
 Z_LOOP    = [0b0111, 0b1011, 0b1101, 0b1110]
-DIAG_LOOP = [0b1001, 0b0110]
+DIAG_LOOP = [0b1001, 0b0110]                   # C: left ↔ right column     Z: diagonal ↔ diagonal
 
 def _cycle_map(seq: List[int]) -> dict:
     return {seq[i]: seq[(i + 1) % len(seq)] for i in range(len(seq))}

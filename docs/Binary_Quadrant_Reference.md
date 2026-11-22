@@ -4,6 +4,11 @@
 
 Each 4-bit binary number represents which quadrants are **active** in a quadtree node.
 
+> **This page reads masks in Z order** (TL, TR, BL, BR), the same as the Go port.
+> The Python runtime (`BinaryQuadTreeTest.py`) draws in **C order** (TL, TR, BR, BL: a backwards C,
+> the clockwise ring), so there `0001` is BL, `1001` is the left column and `1010` is a diagonal.
+> Both orders are on purpose; they serve different shapes. See `GEO_LANGUAGE.md` for the C-order shapes.
+
 ### Quadrant Mapping
 
 | Binary | Decimal | Quadrant     | Visual | Mnemonic   |

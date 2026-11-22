@@ -31,15 +31,17 @@ Active quadrants (bit = 1) are drawn and recursively subdivided. The mask `1010`
 
 ### Loop Families
 
-The 16 possible masks are grouped into five **loop families** that cycle deterministically:
+The 16 possible masks are grouped into five **loop families** that cycle deterministically.
 
-| Family | Members (binary) | Behavior |
-|--------|-------------------|----------|
-| **Y_LOOP** | `1000 → 0100 → 0010 → 0001` | Single quadrant rotates |
-| **X_LOOP** | `1100 → 0101 → 0011 → 1010` | Adjacent pair cycles |
-| **Z_LOOP** | `0111 → 1011 → 1101 → 1110` | Three-quadrant sweep |
-| **DIAG_LOOP** | `1001 ↔ 0110` | Diagonal pair toggles |
-| **GATE** | `0000`, `1111` | Fixed points (no change) |
+The bit layout above is **C order** (TL, TR, BR, BL: a backwards C, the clockwise ring), and that is how this runtime draws. **Z order** (TL, TR, BL, BR) is the other reading, used by the Go port and `docs/Binary_Quadrant_Reference.md`. The same mask is a different shape in each; both orders are on purpose.
+
+| Family | Members (binary) | Drawn here (C order) | Read in Z order |
+|--------|-------------------|----------------------|-----------------|
+| **Y_LOOP** | `1000 → 0100 → 0010 → 0001` | One quadrant walks the C ring | One quadrant walks the Z |
+| **X_LOOP** | `1100 → 0101 → 0011 → 1010` | Top, diagonal, bottom, diagonal | Top, right, bottom, left pair |
+| **Z_LOOP** | `0111 → 1011 → 1101 → 1110` | The gap walks the C ring | The gap walks the Z |
+| **DIAG_LOOP** | `1001 ↔ 0110` | Left column ↔ right column | Diagonal ↔ diagonal |
+| **GATE** | `0000`, `1111` | Fixed points (no change) | Fixed points (no change) |
 
 `ADVANCE` steps a mask forward one position in its loop. `SWITCH Y_LOOP` jumps the mask to the first member of Y_LOOP (`1000`).
 
@@ -432,9 +434,10 @@ ACTIONS:
 ## Families
 
 ```
-Y_LOOP:    1000 → 0100 → 0010 → 0001 → ...   (single quadrant rotates)
-X_LOOP:    1100 → 0101 → 0011 → 1010 → ...   (pair cycles)
-Z_LOOP:    0111 → 1011 → 1101 → 1110 → ...   (three-quadrant sweep)
-DIAG_LOOP: 1001 ↔ 0110                        (diagonal toggle)
-GATE:      0000, 1111                          (fixed points)
+                                              drawn here (C order)      | Z order
+Y_LOOP:    1000 → 0100 → 0010 → 0001 → ...   one quadrant walks C ring  | walks the Z
+X_LOOP:    1100 → 0101 → 0011 → 1010 → ...   top, diag, bottom, diag    | top, right, bottom, left
+Z_LOOP:    0111 → 1011 → 1101 → 1110 → ...   gap walks the C ring       | gap walks the Z
+DIAG_LOOP: 1001 ↔ 0110                        left ↔ right column        | diagonal ↔ diagonal
+GATE:      0000, 1111                          fixed points               | fixed points
 ```

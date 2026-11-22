@@ -65,11 +65,12 @@ NOT A            # negate
 ## Loop Families
 
 ```
-Y_LOOP:    1000 -> 0100 -> 0010 -> 0001  (single quadrant rotates)
-X_LOOP:    1100 -> 0101 -> 0011 -> 1010  (pair cycles)
-Z_LOOP:    0111 -> 1011 -> 1101 -> 1110  (three-quadrant sweep)
-DIAG_LOOP: 1001 <-> 0110               (diagonal toggle)
-GATE:      0000, 1111                   (fixed points)
+                                         Python draws C order (TL,TR,BR,BL) | Z order (TL,TR,BL,BR)
+Y_LOOP:    1000 -> 0100 -> 0010 -> 0001  one quadrant walks C ring          | walks the Z
+X_LOOP:    1100 -> 0101 -> 0011 -> 1010  top, diag, bottom, diag            | top, right, bottom, left
+Z_LOOP:    0111 -> 1011 -> 1101 -> 1110  gap walks the C ring               | gap walks the Z
+DIAG_LOOP: 1001 <-> 0110                 left <-> right column              | diagonal <-> diagonal
+GATE:      0000, 1111                    fixed points                       | fixed points
 ```
 
 ## Minimal Example
