@@ -1,19 +1,21 @@
 # GEO quadtrees as vision-model tokens: first measurements
 
-Measured 2026-11-22. CPU only: no model was run and nothing was trained. This page measures the **token** side of the
-open hypothesis in the README. It does not measure task accuracy.
+Measured 2026-11-22. The token counts are CPU-only. One zero-shot accuracy pilot was run on a public ViT (see
+"Accuracy pilot"); nothing was trained. This page records measurements, not a claim that GEO is better than
+other methods.
 
 ![Saving grows with resolution](media/vision_tokens_resolution.png)
 
 ## Headline
 
-- **A GEO quadtree tokenizer needs about half the tokens of a standard 16px grid on 1024px cel-animation frames**
-  at the same fidelity (51% of the grid at ≥40 dB, median of 8 frames).
-- **The saving grows with resolution.** Every frame needs a smaller share at every doubling: 81% → 68% → 51% of the grid at 256 → 512 → 1024.
-- **GEO beats a published-style entropy rule, and the lead grows with size:** 1 point at 256, 3 at 512, 10 at 1024.
-  At 1024 GEO uses 16% fewer tokens (2084 against 2484).
-- **The "shrink-safe" rule is decisive on blocky content:** 8x pixel art goes from 589 tokens to 16, still lossless.
-  The idea is not new: it is Quadformer's published pixel-blur baseline, applied here as a threshold on the GEO tree.
+- **On 1024px cel-animation frames, a quadtree cut from the GEO tree needed 51% of a standard 16px grid's tokens**
+  at the same fidelity (≥40 dB, median of 8 frames).
+- **The share falls as resolution rises:** 81% → 67% → 51% at 256 → 512 → 1024, on every frame. This is the known
+  behaviour of region quadtrees (cost follows boundary length, not area), measured here on cel animation.
+- **Rules differ by a few points:** at 1024 the shrink rule needed 2084 tokens and an entropy rule 2484. On a real
+  model (accuracy pilot) the ranking is different, so token counts alone don't rank the rules.
+- **The shrink rule finds the right patch size on blocky content:** 8x pixel art goes from 589 tokens to 16, still
+  lossless. The idea is not new: it is Quadformer's published pixel-blur baseline, applied as a threshold on the GEO tree.
 - **On cel frames the floor is the ink.** About 70% of tokens sit on outlines and edges. Grain, drawn texture and video
   compression cost nothing measurable.
 
@@ -109,10 +111,10 @@ Three checks changed nothing:
 | random | 32.6 | 42.2 | 48.8 | 53.5 | 58.4 | 61.3 |
 | plain grid | **49.7** (32px) | | | | | 61.3 (16px) |
 
-- **37% fewer tokens at no measurable loss, zero-shot:** shrink-safe keeps 60.8% at 160 tokens against 61.3% at 256.
+- **37% fewer tokens with no measurable loss, zero-shot:** the shrink rule keeps 60.8% at 160 tokens against 61.3% at 256.
 - **The shrink question is the right one; the codec's "one colour" question is not.** GEO uniform is the weakest
   content-aware rule at low budgets. Shrink-safe and pixel-blur tie within noise, as expected for the same idea.
-- **At 64 tokens a plain coarse grid wins (49.7%).** A model never trained on mixed-size tokens prefers a uniformly
+- **At 64 tokens a plain coarse grid keeps the most (49.7%).** A model never trained on mixed-size tokens prefers a uniformly
   coarser image. Published work closes this gap with a short fine-tune.
 
 ## What this does not show

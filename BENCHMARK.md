@@ -12,8 +12,8 @@ Everything here can be regenerated with the scripts in `benchmarks/`.
 - **Very sparse line art (~1% ink) is the one place it holds its own:** about equal to JPEG by
   PSNR, 10–23% smaller by SSIM.
 - **On flat graphic content, lossless PNG and WebP beat every `.geoi` setting**, while also being exact.
-- This matches the earlier cel measurements (quadtree wins below ~5% ink, PNG wins above):
-  the win is **emptiness (structure)**, not **similarity (perceptual tolerance)**.
+- This matches the earlier cel measurements (quadtree smaller than PNG below ~5% ink, larger above):
+  what the quadtree exploits is **emptiness (structure)**, not **similarity (perceptual tolerance)**.
 
 ## Method
 

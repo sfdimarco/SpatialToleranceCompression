@@ -165,7 +165,7 @@ PNG/JPEG input
 [EncodeHuffman]   Pass 1: collect delta distribution. Build per-channel Huffman tables.
      ↓             Pass 2: write header + root color + 4 Huffman tables + coded bitstream
      ↓
-[.geoi file]      ~3-50x smaller than raw pixels (larger than JPEG at equal quality)
+[.geoi file]      compressed tree (larger than JPEG at equal quality; see BENCHMARK.md)
 ```
 
 **Why YCbCr?** Separates luminance (Y) from chrominance (Cb, Cr). Human eyes are 4× less
@@ -355,16 +355,21 @@ This section is about what GEO adds.
 
 **Measured, token side only.** "Fidelity" is the PSNR of what the model sees after each token is shrunk to 16x16.
 
-| | GEO shrink-safe | entropy (APT-style) | standard 16px grid |
+Tokens needed, as a share of a standard 16px grid (or as a count):
+
+| | shrink rule on the GEO tree | entropy rule (APT-style) | standard 16px grid |
 |---|---|---|---|
-| Cel-animation frames, 1024px, ≥40 dB (median of 8) | **51%** | 61% | 100% |
+| Cel-animation frames, 1024px, ≥40 dB (median of 8) | 51% | 61% | 100% |
 | Cel-animation frames, 512px | 67% | 70% | 100% |
 | Cel-animation frames, 256px | 80% | 82% | 100% |
-| 8x pixel art, 512px, lossless | **16 tokens** | 109 | 16 (only at the right patch size) |
+| 8x pixel art, 512px, lossless | 16 tokens | 109 | 16 (only at the right patch size) |
 | Sparse line art, 512px | 184 tokens | 190 | 1024 |
 
-- **The saving grows with resolution**, on every frame tested. Outlines grow with length; flat fill grows with area.
-- **GEO's lead over the entropy rule grows with it:** 16% fewer tokens at 1024.
+- **The share needed falls as resolution rises**, on every frame tested: outlines grow with length, flat fill with
+  area. This is a known property of region quadtrees (node count follows the boundary, not the area); these
+  numbers measure it on cel animation.
+- **The rules differ by a few points to about 10.** On a real model (below), the entropy rule kept accuracy as well as
+  or better than GEO's own codec rule, so the token counts alone don't rank them.
 - **The shrink-safe rule is not new.** It asks whether a patch survives being shrunk to 16x16. Quadformer's published
   `PixelBlurPatchScorer` asks the same question as a score; it was their baseline. Here it is read from the GEO
   tolerance tree as a threshold (a node is one token when the tree is fully merged 4 levels below it). It finds the
@@ -379,8 +384,8 @@ This section is about what GEO adds.
 - The token side runs on a CPU in seconds.
 
 **Accuracy, zero-shot (ImageNet-R, public ViT-B/16, 1000 images):** with the shrink rule, 160 tokens keep 60.8%
-top-1 against 61.3% for the full 256, i.e. 37% fewer tokens at no measurable loss. GEO's own "one colour" rule does
-worst of the content-aware rules, and at 64 tokens a plain coarse grid beats every mosaic. Details in
+top-1 against 61.3% for the full 256, i.e. 37% fewer tokens at no measurable loss. GEO's own "one colour" rule kept the
+least accuracy of the content-aware rules, and at 64 tokens a plain coarse grid kept more than any mosaic. Details in
 [VISION_TOKENS.md](VISION_TOKENS.md).
 
 **Still open:**
