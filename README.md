@@ -294,6 +294,7 @@ One quadtree, four resolutions — the tree cut at each depth *(rendered from th
 | Bit-exact lossless (q=255) | ❌ Not yet | ~50–53 dB on photos, ~31 dB on pixel art |
 | Streaming HTTP decoder | 🔜 Phase 3 | Range requests → progressive web |
 | Video codec (.geov) | 🔜 Future | Inter-frame delta on quadtrees |
+| Vision-model tokens | ⚠ Tokens only | Token cost measured; task accuracy not yet — see VISION_TOKENS.md |
 
 ---
 
@@ -339,16 +340,45 @@ Interactive demos archived in [`research-/simulations`](https://github.com/sfdim
 
 ---
 
-## Open Hypothesis — GEO as input structure for AI vision models
+## Hypothesis — GEO as input structure for AI vision models
 
-*Untested. Stated as a direction, not a result.*
+*Partly measured (2026-11-22): token cost only, no model run yet. Full data and method in [VISION_TOKENS.md](VISION_TOKENS.md).*
 
-Vision models read an image as a flat grid of patches, and every patch costs the same whether it
-holds detail or empty space. A `.geoi` tree already knows which regions are empty and which carry
-detail, and orders them by Morton address. The hypothesis: giving a model the quadtree hierarchy
-(coarse to fine, detail only where it exists) could let it spend attention and tokens where the
-image actually changes.
+Vision models read an image as a flat grid of patches, and every patch costs the same whether it holds detail or
+empty space. A `.geoi` tree already knows which regions are empty and which carry detail. The hypothesis: giving a
+model the quadtree (coarse where the image is flat, fine only where it changes) lets it spend tokens where the image
+actually changes.
 
-Testing it needs the progressive-bitstream fix above, a model that accepts variable-size regions,
-and compute to compare task accuracy and token cost against standard patching. I don't currently
-have that infrastructure. Collaboration welcome.
+**The general idea is published and works.** Quadformer (2023) uses saliency-guided quadtree patches. APT (ICLR 2026)
+gives low-entropy regions bigger patches and reports 40–50% faster large ViTs. SPLIT and DART learn where to split.
+This section is about what GEO adds.
+
+**Measured, token side only.** "Fidelity" is the PSNR of what the model sees after each token is shrunk to 16x16.
+
+| | GEO shrink-safe | entropy (APT-style) | standard 16px grid |
+|---|---|---|---|
+| Cel-animation frames, 1024px, ≥40 dB (median of 8) | **51%** | 61% | 100% |
+| Cel-animation frames, 512px | 67% | 70% | 100% |
+| Cel-animation frames, 256px | 80% | 82% | 100% |
+| 8x pixel art, 512px, lossless | **16 tokens** | 109 | 16 (only at the right patch size) |
+| Sparse line art, 512px | 184 tokens | 190 | 1024 |
+
+- **The saving grows with resolution**, on every frame tested. Outlines grow with length; flat fill grows with area.
+- **GEO's lead over the entropy rule grows with it:** 16% fewer tokens at 1024.
+- **The shrink-safe rule is GEO's own.** It is read from the tree's progressive cut: a node is one token when the tree
+  is fully merged 4 levels below it. It finds the right patch size for blocky content without being told.
+- **On cel frames the floor is the ink.** About 70% of tokens sit on outlines. Grain, drawn texture and video
+  compression cost nothing measurable.
+
+![Saving grows with resolution](media/vision_tokens_resolution.png)
+
+**Corrections to the earlier version of this section:**
+- Testing doesn't need the progressive-bitstream fix. Tokens come from the in-memory tree.
+- The token side runs on a CPU in seconds.
+
+**Still open:**
+- whether these tokens keep task accuracy (next: feed them into Quadformer's public model at equal token counts);
+- anything above 1024px;
+- photographs.
+
+Collaboration welcome.
