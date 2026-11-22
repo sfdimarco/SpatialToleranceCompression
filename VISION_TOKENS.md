@@ -12,7 +12,8 @@ open hypothesis in the README. It does not measure task accuracy.
 - **The saving grows with resolution.** Every frame needs a smaller share at every doubling: 81% → 68% → 51% of the grid at 256 → 512 → 1024.
 - **GEO beats a published-style entropy rule, and the lead grows with size:** 1 point at 256, 3 at 512, 10 at 1024.
   At 1024 GEO uses 16% fewer tokens (2084 against 2484).
-- **A GEO-specific rule, "shrink-safe", is decisive on blocky content:** 8x pixel art goes from 589 tokens to 16, still lossless.
+- **The "shrink-safe" rule is decisive on blocky content:** 8x pixel art goes from 589 tokens to 16, still lossless.
+  The idea is not new: it is Quadformer's published pixel-blur baseline, applied here as a threshold on the GEO tree.
 - **On cel frames the floor is the ink.** About 70% of tokens sit on outlines and edges. Grain, drawn texture and video
   compression cost nothing measurable.
 
@@ -23,10 +24,17 @@ The general idea is published and works:
 - **APT** (2025; ICLR 2026) gives large patches to low-entropy regions and reports 40–50% faster ViT-L/H.
 - **SPLIT and DART** (2025–26) learn where to split.
 
-What is GEO's own here:
-- the tolerance tree from the codec (`canPrune`, YCbCr);
-- the **shrink-safe** rule read from that tree's progressive cut;
-- the measurements on cel animation, which those papers (on ImageNet photos) do not cover.
+Quadformer's public code (tokenizers only; trained models were never released) also includes:
+- a **PixelBlurPatchScorer**, which scores a patch by the error of shrinking it to 16x16 and blowing it back up. That is
+  the same question as the shrink-safe rule below. It was their baseline; their learned feature-based scorer beat it.
+- a **Z-curve (Morton) quadtree** implementation.
+
+What is GEO's own here is narrower:
+- one tolerance tree that serves both the codec (`canPrune`, YCbCr) and the tokenizer, with thresholds instead of a
+  fixed token budget;
+- the measurements on cel animation and the resolution trend, which those papers (on ImageNet photos) do not cover.
+
+*Corrected 2026-11-22: an earlier version listed the shrink-safe rule as GEO's own.*
 
 ## Method
 
@@ -79,10 +87,39 @@ Three checks changed nothing:
 - smoothing away the drawn texture with edge-preserving mean-shift: 688 → 687 tokens;
 - either way, outlines set the floor.
 
+## Accuracy pilot: zero-shot ViT-B/16 on ImageNet-R
+
+![Accuracy at equal token budgets](media/vision_tokens_pilot_accuracy.png)
+
+**Setup.**
+- **Model:** a public, pretrained ViT-B/16 (`vit_base_patch16_224.augreg2_in21k_ft_in1k`, run at 256px), with no training.
+- **Data:** 1000 random ImageNet-R images (cartoons, sketches, art), top-1 over its 200 classes. The standard error is about ±1.6 points.
+- **Budgets:** every tokenizer cuts each image to an exact token budget, splitting the worst patch first.
+- **How tokens enter the model:** each token is shrunk to 16x16, run through the pretrained patch embedding, and placed
+  at the mean of the grid positions it covers.
+- **Check:** the full grid through this path reproduces the model's own output exactly.
+- **Files:** notebook `benchmarks/vision_tokens/geo_tokens_pilot.ipynb`; numbers in `pilot_results.json`.
+
+| tokens | 64 | 100 | 130 | 160 | 196 | 256 |
+|---|---|---|---|---|---|---|
+| GEO uniform (canPrune score) | 37.7 | 49.3 | 55.7 | 59.5 | 60.1 | 61.3 |
+| GEO shrink-safe | **47.1** | 54.0 | 58.3 | **60.8** | 60.8 | 61.3 |
+| pixel-blur (Quadformer baseline) | 46.9 | **54.3** | **58.9** | 60.3 | **61.2** | 61.3 |
+| entropy (APT-style) | 40.7 | 51.7 | 55.0 | 60.1 | 60.4 | 61.3 |
+| random | 32.6 | 42.2 | 48.8 | 53.5 | 58.4 | 61.3 |
+| plain grid | **49.7** (32px) | | | | | 61.3 (16px) |
+
+- **37% fewer tokens at no measurable loss, zero-shot:** shrink-safe keeps 60.8% at 160 tokens against 61.3% at 256.
+- **The shrink question is the right one; the codec's "one colour" question is not.** GEO uniform is the weakest
+  content-aware rule at low budgets. Shrink-safe and pixel-blur tie within noise, as expected for the same idea.
+- **At 64 tokens a plain coarse grid wins (49.7%).** A model never trained on mixed-size tokens prefers a uniformly
+  coarser image. Published work closes this gap with a short fine-tune.
+
 ## What this does not show
 
-- **No task accuracy.** PSNR of what the model sees is a proxy. The next step is to feed GEO and shrink-safe tokens
-  into Quadformer's public model and compare accuracy at equal token counts.
+- **No fine-tuned accuracy and no cel-frame accuracy.** The accuracy pilot is zero-shot on ImageNet-R; the cel-frame results are PSNR, a proxy. Quadformer's trained models were never released, so
+  the next step is a zero-shot pilot: a standard public ViT-B/16 fed GEO, pixel-blur, entropy and random tokens at
+  equal token budgets, scored on ImageNet-R.
 - **One episode, 8 frames, no photographs** in the resolution test.
 - **Nothing above 1024.** The masters are 1080p, and upscaling would be fake data. The trend suggests the saving keeps
   growing; that is not measured.

@@ -294,7 +294,7 @@ One quadtree, four resolutions — the tree cut at each depth *(rendered from th
 | Bit-exact lossless (q=255) | ❌ Not yet | ~50–53 dB on photos, ~31 dB on pixel art |
 | Streaming HTTP decoder | 🔜 Phase 3 | Range requests → progressive web |
 | Video codec (.geov) | 🔜 Future | Inter-frame delta on quadtrees |
-| Vision-model tokens | ⚠ Tokens only | Token cost measured; task accuracy not yet — see VISION_TOKENS.md |
+| Vision-model tokens | ⚠ Pilot | Token cost measured; zero-shot accuracy pilot done; no fine-tune yet — see VISION_TOKENS.md |
 
 ---
 
@@ -342,7 +342,7 @@ Interactive demos archived in [`research-/simulations`](https://github.com/sfdim
 
 ## Hypothesis — GEO as input structure for AI vision models
 
-*Partly measured (2026-11-22): token cost only, no model run yet. Full data and method in [VISION_TOKENS.md](VISION_TOKENS.md).*
+*Partly measured (2026-11-22): token cost, plus a zero-shot accuracy pilot. Full data and method in [VISION_TOKENS.md](VISION_TOKENS.md).*
 
 Vision models read an image as a flat grid of patches, and every patch costs the same whether it holds detail or
 empty space. A `.geoi` tree already knows which regions are empty and which carry detail. The hypothesis: giving a
@@ -365,8 +365,10 @@ This section is about what GEO adds.
 
 - **The saving grows with resolution**, on every frame tested. Outlines grow with length; flat fill grows with area.
 - **GEO's lead over the entropy rule grows with it:** 16% fewer tokens at 1024.
-- **The shrink-safe rule is GEO's own.** It is read from the tree's progressive cut: a node is one token when the tree
-  is fully merged 4 levels below it. It finds the right patch size for blocky content without being told.
+- **The shrink-safe rule is not new.** It asks whether a patch survives being shrunk to 16x16. Quadformer's published
+  `PixelBlurPatchScorer` asks the same question as a score; it was their baseline. Here it is read from the GEO
+  tolerance tree as a threshold (a node is one token when the tree is fully merged 4 levels below it). It finds the
+  right patch size for blocky content without being told. *(Corrected 2026-11-22: an earlier version called this rule GEO's own.)*
 - **On cel frames the floor is the ink.** About 70% of tokens sit on outlines. Grain, drawn texture and video
   compression cost nothing measurable.
 
@@ -376,9 +378,14 @@ This section is about what GEO adds.
 - Testing doesn't need the progressive-bitstream fix. Tokens come from the in-memory tree.
 - The token side runs on a CPU in seconds.
 
+**Accuracy, zero-shot (ImageNet-R, public ViT-B/16, 1000 images):** with the shrink rule, 160 tokens keep 60.8%
+top-1 against 61.3% for the full 256, i.e. 37% fewer tokens at no measurable loss. GEO's own "one colour" rule does
+worst of the content-aware rules, and at 64 tokens a plain coarse grid beats every mosaic. Details in
+[VISION_TOKENS.md](VISION_TOKENS.md).
+
 **Still open:**
-- whether these tokens keep task accuracy (next: feed them into Quadformer's public model at equal token counts);
-- anything above 1024px;
-- photographs.
+- a short fine-tune with mixed-size tokens, which published work says closes the low-budget gap;
+- accuracy on cel-animation frames (no labelled set yet);
+- anything above 1024px.
 
 Collaboration welcome.
